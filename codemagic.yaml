@@ -1,18 +1,36 @@
 workflows:
   gbaz_ios:
     name: gbaz iOS to TestFlight
+    instance_type: mac_mini_m2
     max_build_duration: 60
+
     environment:
       xcode: 16.4
-    xcode_project:
-      path: gbaz/gbaz.xcodeproj
-      scheme: gbaz
-      ios_version: 15.0
-      export_method: app-store
+      vars:
+        BUNDLE_ID: au.gbaz.app
+        XCODE_PROJECT: IOS-FirstApp/IOS-FirstApp.xcodeproj
+        XCODE_SCHEME: IOS-FirstApp
+
+    # Use the App Store Connect integration you added in Codemagic (exact name)
+    integrations:
+      app_store_connect: YOUR_ASC_INTEGRATION_NAME
+
+    scripts:
+      - name: Fetch signing & set keychain
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build .ipa
+        script: |
+          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
     publishing:
       app_store_connect:
-        auth: api_key
-        key_id: $ASC_KEY_ID
-        issuer_id: $ASC_ISSUER_ID
-        key: Encrypted(.p8)
+        auth: integration
         submit_to_testflight: true
