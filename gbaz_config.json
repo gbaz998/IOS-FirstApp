@@ -1,0 +1,45 @@
+{
+  "app": {
+    "bundle_id": "au.gbaz.app",
+    "version": "0.1.0",
+    "build": 1
+  },
+  "map": {
+    "fixed": true,
+    "zoom_enabled": false,
+    "share_button": {
+      "position": "bottom_center",
+      "approx_size": "M&M",
+      "color": "black",
+      "icon": "share_location_white"
+    },
+    "routes": {
+      "train": [
+        "#0066CC",
+        "#66B2FF",
+        "#0066CC"
+      ],
+      "bus": [
+        "#66B2FF",
+        "#FFD400",
+        "#000000"
+      ],
+      "hidden_until_unlocked": true
+    }
+  },
+  "icons": [],
+  "reward": {
+    "trigger": "all_icons_unlocked",
+    "animation_asset": "city_reward.gif",
+    "with_sound": false
+  },
+  "persistence": {
+    "store": "UserDefaults",
+    "key": "gbaz.unlockedIconIDs"
+  },
+  "permission_prompts": {
+    "microphone": "We use the microphone to detect city sounds on-device to unlock the map.",
+    "location": "We use your location to place unlocks accurately on the Sydney map.",
+    "notifications": "We send a brief banner when a sound unlock happens, and a notification when the screen is locked."
+  }
+}

@@ -1,0 +1,18 @@
+workflows:
+  gbaz_ios:
+    name: gbaz iOS to TestFlight
+    max_build_duration: 60
+    environment:
+      xcode: 16.4
+    xcode_project:
+      path: gbaz/gbaz.xcodeproj
+      scheme: gbaz
+      ios_version: 15.0
+      export_method: app-store
+    publishing:
+      app_store_connect:
+        auth: api_key
+        key_id: $ASC_KEY_ID
+        issuer_id: $ASC_ISSUER_ID
+        key: Encrypted(.p8)
+        submit_to_testflight: true
