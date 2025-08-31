@@ -2,54 +2,89 @@ workflows:
   ios_release:
     name: iOS Release to TestFlight
     integrations:
-      app_store_connect: gbaz-asc   # ASC integration name in Codemagic
+      app_store_connect: gbaz-asc
     environment:
       xcode: 16.4
       vars:
-        APP_SCHEME: "HelloWorld"
+        APP_SCHEME: "HelloWorld"              # your intended scheme
         PROJECT_PATH: "HelloWorld.xcodeproj"
         BUNDLE_ID: "au.gbaz.app"
     scripts:
       - name: Show Xcode project details
         script: |
           xcodebuild -list -project "$PROJECT_PATH" || true
-            - name: Increment build number (auto-detect)
+
+      # 1) Find Info.plist by bundle id (no xcodebuild dependency)
+      - name: Locate Info.plist by bundle id
         script: |
           set -euo pipefail
-          echo "PROJECT_PATH=$PROJECT_PATH"
-          echo "APP_SCHEME=$APP_SCHEME"
-          echo "BUILD_NUMBER=${BUILD_NUMBER:-1}"
-
-          # Try Release first, then Debug
-          for CONFIG in Release Debug; do
-            OUT="$(xcodebuild -showBuildSettings -project "$PROJECT_PATH" -scheme "$APP_SCHEME" -configuration "$CONFIG" 2>/dev/null || true)"
-            INFOPLIST_PATH="$(echo "$OUT" | awk -F'= ' '/INFOPLIST_FILE|INFOPLIST_PATH/ {print $2; exit}')"
-            SRCROOT="$(echo "$OUT" | awk -F'= ' '/ SRCROOT / {print $2; exit}')"
-            if [ -n "${INFOPLIST_PATH:-}" ] && [ -n "${SRCROOT:-}" ]; then
-              PLIST_PATH="$SRCROOT/$INFOPLIST_PATH"
+          echo "Looking for Info.plist with CFBundleIdentifier=$BUNDLE_ID"
+          PLIST_PATH=""
+          while IFS= read -r -d '' P; do
+            ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$P" 2>/dev/null || true)
+            if [ "$ID" = "$BUNDLE_ID" ]; then
+              PLIST_PATH="$P"
               break
             fi
-          done
+          done < <(find . -type f -name Info.plist -print0)
 
-          if [ -z "${PLIST_PATH:-}" ] || [ ! -f "$PLIST_PATH" ]; then
-            echo "❌ Could not locate Info.plist via xcodebuild."
-            echo "Tip: ensure scheme '$APP_SCHEME' is Shared and PROJECT_PATH is correct."
+          if [ -z "$PLIST_PATH" ]; then
+            echo "❌ No Info.plist found with CFBundleIdentifier=$BUNDLE_ID"
             exit 1
           fi
 
-          echo "✅ Using Info.plist: $PLIST_PATH"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER:-1}" "$PLIST_PATH" \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${BUILD_NUMBER:-1}" "$PLIST_PATH"
-          echo "✅ CFBundleVersion -> ${BUILD_NUMBER:-1}"
+          echo "✅ Found Info.plist: $PLIST_PATH"
+          # Persist for later steps
+          echo "export INFO_PLIST_PATH=\"$PLIST_PATH\"" >> $CM_ENV
+
+      # 2) Ensure version keys exist and bump CFBundleVersion to Codemagic build number
+      - name: Bump build number
+        script: |
+          set -euo pipefail
+          : "${BUILD_NUMBER:=1}"
+          : "${INFO_PLIST_PATH:?INFO_PLIST_PATH not set}"
+
+          /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0.0" "$INFO_PLIST_PATH" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$INFO_PLIST_PATH" 2>/dev/null || true
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$INFO_PLIST_PATH" || {
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUMBER" "$INFO_PLIST_PATH"
+          }
+
+          echo "✅ CFBundleVersion -> $BUILD_NUMBER at $INFO_PLIST_PATH"
+
+      # 3) (Optional) If APP_SCHEME is not visible, auto-pick the first available scheme
+      - name: Choose build scheme (fallback if needed)
+        script: |
+          set -euo pipefail
+          # List schemes
+          SCHEMES=$(xcodebuild -list -project "$PROJECT_PATH" | awk '/Schemes:/{p=1;next} p && NF{print}' || true)
+          echo "Schemes visible:"
+          echo "$SCHEMES"
+          if echo "$SCHEMES" | grep -qx "$APP_SCHEME"; then
+            USE_SCHEME="$APP_SCHEME"
+          else
+            # pick the first scheme line if our preferred one isn't there
+            USE_SCHEME="$(echo "$SCHEMES" | head -n1 | tr -d '\r')"
+            if [ -z "$USE_SCHEME" ]; then
+              echo "❌ No buildable schemes found. Make sure your scheme is Shared."
+              exit 1
+            fi
+            echo "⚠️ Preferred scheme '$APP_SCHEME' not found; using '$USE_SCHEME' instead."
+          fi
+          echo "export BUILD_SCHEME=\"$USE_SCHEME\"" >> $CM_ENV
+          echo "✅ Will build with scheme: $USE_SCHEME"
+
       - name: Build archive
         script: |
           xcodebuild \
             -project "$PROJECT_PATH" \
-            -scheme "$APP_SCHEME" \
+            -scheme "${BUILD_SCHEME:-$APP_SCHEME}" \
             -configuration Release \
             -sdk iphoneos \
             -archivePath "$CM_BUILD_DIR/app.xcarchive" \
             clean archive
+
       - name: Export IPA
         script: |
           cat > /tmp/exportOptions.plist <<'PLIST'
@@ -69,12 +104,14 @@ workflows:
             -archivePath "$CM_BUILD_DIR/app.xcarchive" \
             -exportOptionsPlist /tmp/exportOptions.plist \
             -exportPath "$CM_BUILD_DIR/Export"
+
     artifacts:
       - $CM_BUILD_DIR/Export/*.ipa
       - $CM_BUILD_DIR/app.xcarchive/dSYMs/*.dSYM
+
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
         beta_groups:
-          - "gbaz-testers"   # <-- must match a TestFlight group name in App Store Connect
+          - "gbaz-testers"
