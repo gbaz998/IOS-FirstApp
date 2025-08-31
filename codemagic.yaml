@@ -1,6 +1,8 @@
 workflows:
   ios_release:
     name: iOS Release to TestFlight
+    integrations:
+      app_store_connect: gbaz-asc   # ASC integration name in Codemagic
     environment:
       xcode: 16.4
       vars:
@@ -11,12 +13,10 @@ workflows:
       - name: Show Xcode project details
         script: |
           xcodebuild -list -project "$PROJECT_PATH" || true
-
       - name: Increment build number
         script: |
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" \
             "$PROJECT_PATH/../HelloWorld/Info.plist"
-
       - name: Build archive
         script: |
           xcodebuild \
@@ -26,7 +26,6 @@ workflows:
             -sdk iphoneos \
             -archivePath "$CM_BUILD_DIR/app.xcarchive" \
             clean archive
-
       - name: Export IPA
         script: |
           cat > /tmp/exportOptions.plist <<'PLIST'
@@ -42,20 +41,16 @@ workflows:
           </dict>
           </plist>
           PLIST
-
           xcodebuild -exportArchive \
             -archivePath "$CM_BUILD_DIR/app.xcarchive" \
             -exportOptionsPlist /tmp/exportOptions.plist \
             -exportPath "$CM_BUILD_DIR/Export"
-
     artifacts:
       - $CM_BUILD_DIR/Export/*.ipa
       - $CM_BUILD_DIR/app.xcarchive/dSYMs/*.dSYM
-
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
-integrations:
-  app_store_connect: gbaz-asc
+        beta_groups:
+          - "gbaz-testers"   # <-- must match a TestFlight group name in App Store Connect
