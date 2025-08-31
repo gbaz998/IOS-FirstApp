@@ -1,36 +1,61 @@
 workflows:
-  gbaz_ios:
-    name: gbaz iOS to TestFlight
-    instance_type: mac_mini_m2
-    max_build_duration: 60
-
+  ios_release:
+    name: iOS Release to TestFlight
     environment:
       xcode: 16.4
       vars:
-        BUNDLE_ID: au.gbaz.app
-        XCODE_PROJECT: IOS-FirstApp/IOS-FirstApp.xcodeproj
-        XCODE_SCHEME: IOS-FirstApp
-
-    # Use the App Store Connect integration you added in Codemagic (exact name)
-    integrations:
-      app_store_connect: YOUR_ASC_INTEGRATION_NAME
-
+        APP_SCHEME: "HelloWorld"
+        PROJECT_PATH: "HelloWorld.xcodeproj"
+        BUNDLE_ID: "au.gbaz.app"
     scripts:
-      - name: Fetch signing & set keychain
+      - name: Show Xcode project details
         script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-          keychain add-certificates
-          xcode-project use-profiles
+          xcodebuild -list -project "$PROJECT_PATH" || true
 
-      - name: Build .ipa
+      - name: Increment build number
         script: |
-          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" \
+            "$PROJECT_PATH/../HelloWorld/Info.plist"
+
+      - name: Build archive
+        script: |
+          xcodebuild \
+            -project "$PROJECT_PATH" \
+            -scheme "$APP_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$CM_BUILD_DIR/app.xcarchive" \
+            clean archive
+
+      - name: Export IPA
+        script: |
+          cat > /tmp/exportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store</string>
+            <key>uploadSymbols</key><true/>
+            <key>compileBitcode</key><false/>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+          </dict>
+          </plist>
+          PLIST
+
+          xcodebuild -exportArchive \
+            -archivePath "$CM_BUILD_DIR/app.xcarchive" \
+            -exportOptionsPlist /tmp/exportOptions.plist \
+            -exportPath "$CM_BUILD_DIR/Export"
 
     artifacts:
-      - build/ios/ipa/*.ipa
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - $CM_BUILD_DIR/Export/*.ipa
+      - $CM_BUILD_DIR/app.xcarchive/dSYMs/*.dSYM
 
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
+integrations:
+  app_store_connect: gbaz-asc
