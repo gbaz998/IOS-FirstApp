@@ -13,10 +13,34 @@ workflows:
       - name: Show Xcode project details
         script: |
           xcodebuild -list -project "$PROJECT_PATH" || true
-      - name: Increment build number
+            - name: Increment build number (auto-detect)
         script: |
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" \
-            "$PROJECT_PATH/../HelloWorld/Info.plist"
+          set -euo pipefail
+          echo "PROJECT_PATH=$PROJECT_PATH"
+          echo "APP_SCHEME=$APP_SCHEME"
+          echo "BUILD_NUMBER=${BUILD_NUMBER:-1}"
+
+          # Try Release first, then Debug
+          for CONFIG in Release Debug; do
+            OUT="$(xcodebuild -showBuildSettings -project "$PROJECT_PATH" -scheme "$APP_SCHEME" -configuration "$CONFIG" 2>/dev/null || true)"
+            INFOPLIST_PATH="$(echo "$OUT" | awk -F'= ' '/INFOPLIST_FILE|INFOPLIST_PATH/ {print $2; exit}')"
+            SRCROOT="$(echo "$OUT" | awk -F'= ' '/ SRCROOT / {print $2; exit}')"
+            if [ -n "${INFOPLIST_PATH:-}" ] && [ -n "${SRCROOT:-}" ]; then
+              PLIST_PATH="$SRCROOT/$INFOPLIST_PATH"
+              break
+            fi
+          done
+
+          if [ -z "${PLIST_PATH:-}" ] || [ ! -f "$PLIST_PATH" ]; then
+            echo "❌ Could not locate Info.plist via xcodebuild."
+            echo "Tip: ensure scheme '$APP_SCHEME' is Shared and PROJECT_PATH is correct."
+            exit 1
+          fi
+
+          echo "✅ Using Info.plist: $PLIST_PATH"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER:-1}" "$PLIST_PATH" \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${BUILD_NUMBER:-1}" "$PLIST_PATH"
+          echo "✅ CFBundleVersion -> ${BUILD_NUMBER:-1}"
       - name: Build archive
         script: |
           xcodebuild \
