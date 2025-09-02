@@ -2,13 +2,14 @@ workflows:
   ios_to_testflight:
     name: iOS → TestFlight
     integrations:
-      app_store_connect: "gbaz-asc"   # <- must match your integration name in Codemagic
+      app_store_connect: "gbaz-asc"
     environment:
       xcode: 16.4
       vars:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
+        TEAM_ID: "8WPD9W2B39"
     scripts:
       - name: Prepare signing
         script: |
@@ -19,33 +20,37 @@ workflows:
 
       - name: Force Swift 5.0
         script: |
-          echo "Patching Swift version to 5.0..."
           sed -i '' 's/SWIFT_VERSION = 3.0/SWIFT_VERSION = 5.0/g' "$XCODE_PROJECT/project.pbxproj"
 
-      - name: Build archive
+      - name: Show schemes
+        script: |
+          echo "=== Schemes in project ==="
+          xcodebuild -list -project "$XCODE_PROJECT" || true
+          echo "=========================="
+
+      - name: Show build settings
+        script: |
+          echo "=== Build settings (Release) ==="
+          xcodebuild -showBuildSettings \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release 2>/dev/null | \
+            egrep "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER|CODE_SIGN_IDENTITY" || true
+          echo "================================"
+
+      - name: Build archive (diagnostic)
         script: |
           set -o pipefail
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -configuration Release \
-            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -archivePath $CM_BUILD_DIR/app.xcarchive \
-            clean archive | xcpretty
-
-      - name: Export IPA
-        script: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath $CM_BUILD_DIR/app.xcarchive \
-            -exportOptionsPlist exportOptions.plist \
-            -exportPath $CM_BUILD_DIR
-
+            clean archive | tee xcodebuild.log | xcpretty
     artifacts:
-      - $CM_BUILD_DIR/*.ipa
       - $CM_BUILD_DIR/app.xcarchive
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
-      - $HOME/Library/Logs/gym/*.log
+      - xcodebuild.log
 
     publishing:
       app_store_connect:
