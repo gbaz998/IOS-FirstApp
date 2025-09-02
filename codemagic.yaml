@@ -2,7 +2,7 @@ workflows:
   ios_to_testflight:
     name: iOS → TestFlight
     integrations:
-      app_store_connect: "gbaz-asc"   # <- EXACT name of your ASC integration in Codemagic
+      app_store_connect: "gbaz-asc"
     environment:
       xcode: 16.4
       vars:
@@ -17,28 +17,28 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Verify build settings
-        script: |
-          xcodebuild -list -project "$XCODE_PROJECT" || true
-          xcodebuild -showBuildSettings \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release 2>/dev/null | \
-            egrep "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER" || true
-
-      - name: Build IPA
+      - name: Build archive
         script: |
           set -o pipefail
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME" \
-            --archive-method app-store \
-            --verbose
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath $CM_BUILD_DIR/app.xcarchive \
+            clean archive | xcpretty
 
+      - name: Export IPA
+        script: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath $CM_BUILD_DIR/app.xcarchive \
+            -exportOptionsPlist exportOptions.plist \
+            -exportPath $CM_BUILD_DIR
     artifacts:
-      - build/ios/ipa/*.ipa
+      - $CM_BUILD_DIR/*.ipa
+      - $CM_BUILD_DIR/app.xcarchive
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
-      - $HOME/Library/Logs/gym/*.log
 
     publishing:
       app_store_connect:
