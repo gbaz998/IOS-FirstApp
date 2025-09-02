@@ -1,14 +1,15 @@
 workflows:
   ios_to_testflight:
     name: iOS → TestFlight
+    integrations:
+      app_store_connect: "gbaz-asc"   # <- EXACT name of your ASC integration in Codemagic
     environment:
       xcode: 16.4
       vars:
-        XCODE_PROJECT: "HelloWorld.xcodeproj"   # <- change if your .xcodeproj name differs
-        XCODE_SCHEME: "HelloWorld"              # <- must match an Xcode shared scheme
-        BUNDLE_ID: "au.gbaz.app"                # <- your bundle id (must match the profile)
+        XCODE_PROJECT: "HelloWorld.xcodeproj"
+        XCODE_SCHEME: "HelloWorld"
+        BUNDLE_ID: "au.gbaz.app"
     scripts:
-      # Use your uploaded .p12 + .mobileprovision and switch project to MANUAL signing
       - name: Prepare signing
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
@@ -16,7 +17,6 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      # (Optional but helpful) Quick sanity check
       - name: Verify build settings
         script: |
           xcodebuild -list -project "$XCODE_PROJECT" || true
@@ -26,7 +26,6 @@ workflows:
             -configuration Release 2>/dev/null | \
             egrep "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER" || true
 
-      # Build + archive + export IPA for App Store
       - name: Build IPA
         script: |
           set -o pipefail
@@ -45,5 +44,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # beta_groups:
-        #   - "External Testers"
