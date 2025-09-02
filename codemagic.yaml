@@ -2,7 +2,7 @@ workflows:
   ios_to_testflight:
     name: iOS → TestFlight
     integrations:
-      app_store_connect: "gbaz-asc"
+      app_store_connect: "gbaz-asc"   # <- must match your integration name in Codemagic
     environment:
       xcode: 16.4
       vars:
@@ -16,6 +16,11 @@ workflows:
           keychain initialize
           keychain add-certificates
           xcode-project use-profiles
+
+      - name: Force Swift 5.0
+        script: |
+          echo "Patching Swift version to 5.0..."
+          sed -i '' 's/SWIFT_VERSION = 3.0/SWIFT_VERSION = 5.0/g' "$XCODE_PROJECT/project.pbxproj"
 
       - name: Build archive
         script: |
@@ -35,10 +40,12 @@ workflows:
             -archivePath $CM_BUILD_DIR/app.xcarchive \
             -exportOptionsPlist exportOptions.plist \
             -exportPath $CM_BUILD_DIR
+
     artifacts:
       - $CM_BUILD_DIR/*.ipa
       - $CM_BUILD_DIR/app.xcarchive
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - $HOME/Library/Logs/gym/*.log
 
     publishing:
       app_store_connect:
