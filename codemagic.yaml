@@ -14,7 +14,9 @@ workflows:
       - name: Fetch & install signing assets
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
-          keychain initialize /users/builder/library/codemagic-cli-tools/keychains
+          keychain initialize
+
+keychain add-certificates --certificate /path/to/certificate.p12 --certificate-password D3237a2cacfb
           keychain add-certificates
 
       - name: Ensure scheme (auto-detect if missing)
