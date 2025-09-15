@@ -7,19 +7,21 @@ workflows:
 
     environment:
       xcode: 16.4
+      clean: true            # <- forces a clean build each run
       vars:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
 
     scripts:
-      - name: Fetch signing files from App Store Connect
+      - name: Create/fetch signing and import
         script: |
           set -e
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain initialize
           keychain add-certificates
           xcode-project use-profiles
+          security find-identity -v -p codesigning || true
 
       - name: Ensure scheme (auto-detect if missing)
         script: |
@@ -35,9 +37,7 @@ workflows:
       - name: Build IPA
         script: |
           set -e
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
+          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
       - $CM_BUILD_DIR/*.ipa
@@ -47,5 +47,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # beta_groups:
-        #   - Internal Testers
