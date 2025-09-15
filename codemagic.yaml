@@ -11,24 +11,58 @@ workflows:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
-        # After you upload secure files in Codemagic, these are set automatically:
-        # CM_CERTIFICATE               -> path to uploaded .p12
-        # CM_CERTIFICATE_PASSWORD      -> password you set for the .p12
-        # CM_PROVISIONING_PROFILE      -> (optional) uploaded .mobileprovision
+        # After you upload secure files in Codemagic, it sets variables like:
+        # CM_CERTIFICATE, CM_CERTIFICATE_1, ...
+        # CM_CERTIFICATE_PASSWORD (and _1, ...)
+        # CM_PROVISIONING_PROFILE (optional)
 
     scripts:
-      - name: Import cert (with private key) + profile
+      - name: Import cert (with private key) + profile (robust)
         script: |
-          set -e
+          set -euo pipefail
           keychain initialize
-          keychain add-certificates \
-            --certificate "$CM_CERTIFICATE" \
-            --certificate-password "$CM_CERTIFICATE_PASSWORD"
 
-          if [ -n "${CM_PROVISIONING_PROFILE:-}" ]; then
-            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-            cp "$CM_PROVISIONING_PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles"/
+          # --- Find a certificate env var (CM_CERTIFICATE or CM_CERTIFICATE_1, etc.) ---
+          CERT_VAR="$(env | grep -E '^CM_CERTIFICATE(_[0-9]+)?=' | head -n1 | cut -d= -f1 || true)"
+          if [ -z "${CERT_VAR:-}" ]; then
+            echo "ERROR: No CM_CERTIFICATE environment variable found."
+            echo "Upload your .p12 in Codemagic: Team → Code signing identities → iOS certificates."
+            exit 1
+          fi
+          CERT_PATH="${!CERT_VAR}"
+
+          # Match corresponding password variable (CM_CERTIFICATE_PASSWORD or CM_CERTIFICATE_PASSWORD_1)
+          PASS_VAR="${CERT_VAR/_CERTIFICATE/_CERTIFICATE_PASSWORD}"
+          if [ -z "${!PASS_VAR:-}" ]; then
+            echo "ERROR: No password found for $CERT_VAR (expected $PASS_VAR)."
+            echo "When uploading the .p12, set a password and ensure Codemagic saved it."
+            exit 1
+          fi
+          CERT_PASS="${!PASS_VAR}"
+
+          if [ ! -f "$CERT_PATH" ]; then
+            echo "ERROR: $CERT_VAR points to a missing file: $CERT_PATH"
+            ls -la "$(dirname "$CERT_PATH")" || true
+            exit 1
+          fi
+          echo "Using certificate: $CERT_VAR -> $CERT_PATH"
+
+          # Import the .p12 (ensures private key is present)
+          keychain add-certificates --certificate "$CERT_PATH" --certificate-password "$CERT_PASS"
+
+          # --- Provisioning profile: use uploaded one if present, else fetch from ASC ---
+          if env | grep -q '^CM_PROVISIONING_PROFILE='; then
+            PROV_PATH="${CM_PROVISIONING_PROFILE}"
+            if [ -f "$PROV_PATH" ]; then
+              mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+              cp "$PROV_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles"/
+              echo "Installed uploaded provisioning profile."
+            else
+              echo "WARNING: CM_PROVISIONING_PROFILE set but file missing: $PROV_PATH — will fetch from ASC."
+              app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
+            fi
           else
+            echo "No uploaded provisioning profile — fetching from App Store Connect…"
             app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
           fi
 
@@ -40,7 +74,7 @@ workflows:
         script: |
           set -e
           PLIST=$(xcodebuild -showBuildSettings -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release 2>/dev/null | awk -F'= ' '/INFOPLIST_FILE/ {print $2; exit}')
-          if [ -z "$PLIST" ] || [ ! -f "$PLIST" ]; then
+          if [ -z "${PLIST:-}" ] || [ ! -f "$PLIST" ]; then
             echo "Could not locate Info.plist; skipping bump"
           else
             NEW_BUILD=$(date +%Y%m%d%H%M)
@@ -73,5 +107,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # beta_groups:
-        #   - Internal Testers
