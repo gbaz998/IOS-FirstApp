@@ -1,21 +1,34 @@
 workflows:
   ios_to_testflight:
     name: iOS → TestFlight
+
+    # (optional) keep this — it helps you see which integration the workflow expects in the UI
     integrations:
       app_store_connect: "gbaz 15/9"
+
     environment:
       xcode: 16.4
       vars:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
-        TEAM_ID: "8WPD9W2B39"
+        # TEAM_ID not needed when using Codemagic's profiles helper
+        # TEAM_ID: "8WPD9W2B39"
+
     scripts:
-      - name: Fetch & install signing assets
+      # 1) Fetch/create signing files and import to keychain
+      - name: Fetch signing files from App Store Connect
         script: |
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
-          keychain initialize keychain add-certificates --certificate /path/to/certificate.p12 --certificate-password CERTIFICATE_PASSWORD
+          set -e
+          # Creates or fetches a Distribution certificate + App Store profile for your BUNDLE_ID
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          # Initialize the build keychain and import downloaded certs
+          keychain initialize
           keychain add-certificates
+          # Make Xcode use the downloaded provisioning profiles automatically
+          xcode-project use-profiles
+
+      # 2) (Optional) Auto-detect scheme if your scheme name changes
       - name: Ensure scheme (auto-detect if missing)
         script: |
           set -e
@@ -27,72 +40,22 @@ workflows:
             echo "export XCODE_SCHEME=\"$DETECTED_SCHEME\"" >> $CM_ENV
           fi
 
-      - name: Patch project (Swift 5.0 + iOS 12.0)
-        script: |
-          PBX="$XCODE_PROJECT/project.pbxproj"
-          sed -i '' 's/SWIFT_VERSION = 3.0/SWIFT_VERSION = 5.0/g' "$PBX" || true
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]\+/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
-
-      - name: Select matching App Store profile
+      # 3) Build + export IPA (Codemagic helper handles ExportOptionsPlist)
+      - name: Build IPA
         script: |
           set -e
-          PROFILES="$HOME/Library/MobileDevice/Provisioning Profiles"
-          for f in "$PROFILES"/*.mobileprovision; do
-            security cms -D -i "$f" > /tmp/p.xml
-            APPID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" /tmp/p.xml 2>/dev/null || true)
-            NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" /tmp/p.xml 2>/dev/null || true)
-            UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /tmp/p.xml 2>/dev/null || true)
-            if [ -n "$APPID" ] && echo "$APPID" | grep -q ":$BUNDLE_ID$"; then
-              echo "export PROFILE_NAME=\"$NAME\"" >> $CM_ENV
-              echo "export PROFILE_UUID=\"$UUID\"" >> $CM_ENV
-              echo "Using profile: $NAME ($UUID)"
-              exit 0
-            fi
-          done
-          echo "No App Store profile found for $BUNDLE_ID"; ls -1 "$PROFILES" || true; exit 1
-
-      - name: Show key build settings (Release)
-        script: |
-          xcodebuild -showBuildSettings \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release 2>/dev/null | egrep \
-            "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_STYLE|PROVISIONING_PROFILE_SPECIFIER|PROVISIONING_PROFILE =|CODE_SIGN_IDENTITY|IPHONEOS_DEPLOYMENT_TARGET" || true
-
-      - name: Archive (RAW LOGS, with overrides; NO xcpretty)
-        script: |
-          set -o pipefail
-          env NSUnbufferedIO=YES xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath $CM_BUILD_DIR/app.xcarchive \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            PROVISIONING_PROFILE="$PROFILE_UUID" \
-            IPHONEOS_DEPLOYMENT_TARGET=12.0 \
-            clean archive 2>&1 | tee xcodebuild-archive.log
-
-      - name: Export IPA
-        script: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath $CM_BUILD_DIR/app.xcarchive \
-            -exportOptionsPlist exportOptions.plist \
-            -exportPath $CM_BUILD_DIR 2>&1 | tee xcodebuild-export.log
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
 
     artifacts:
       - $CM_BUILD_DIR/*.ipa
       - $CM_BUILD_DIR/app.xcarchive
-      - xcodebuild-archive.log
-      - xcodebuild-export.log
 
     publishing:
       app_store_connect:
         auth: integration
+        integration: "gbaz 15/9"   # << ADD THIS (exact name from Integrations)
         submit_to_testflight: true
+        # beta_groups:
+        #   - Internal Testers
