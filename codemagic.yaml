@@ -1,10 +1,9 @@
 workflows:
   ios_to_testflight:
     name: iOS → TestFlight
-    clean: true                  # <- put it here, under the workflow
 
     integrations:
-      app_store_connect: "gbaz 15/9"
+      app_store_connect: "gbaz 15/9"   # exact name from Team → Integrations
 
     environment:
       xcode: 16.4
