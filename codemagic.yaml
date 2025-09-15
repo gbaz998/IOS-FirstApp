@@ -11,16 +11,43 @@ workflows:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
+        # After you upload secure files in Codemagic, these are set automatically:
+        # CM_CERTIFICATE               -> path to uploaded .p12
+        # CM_CERTIFICATE_PASSWORD      -> password you set for the .p12
+        # CM_PROVISIONING_PROFILE      -> (optional) uploaded .mobileprovision
 
     scripts:
-      - name: Create/fetch signing and import
+      - name: Import cert (with private key) + profile
         script: |
           set -e
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain initialize
-          keychain add-certificates
+          keychain add-certificates \
+            --certificate "$CM_CERTIFICATE" \
+            --certificate-password "$CM_CERTIFICATE_PASSWORD"
+
+          if [ -n "${CM_PROVISIONING_PROFILE:-}" ]; then
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            cp "$CM_PROVISIONING_PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles"/
+          else
+            app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
+          fi
+
           xcode-project use-profiles
+          echo "=== Code signing identities ==="
           security find-identity -v -p codesigning || true
+
+      - name: Auto-bump build number (CFBundleVersion)
+        script: |
+          set -e
+          PLIST=$(xcodebuild -showBuildSettings -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release 2>/dev/null | awk -F'= ' '/INFOPLIST_FILE/ {print $2; exit}')
+          if [ -z "$PLIST" ] || [ ! -f "$PLIST" ]; then
+            echo "Could not locate Info.plist; skipping bump"
+          else
+            NEW_BUILD=$(date +%Y%m%d%H%M)
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
+            echo "Set CFBundleVersion to $NEW_BUILD"
+          fi
 
       - name: Ensure scheme (auto-detect if missing)
         script: |
@@ -46,3 +73,5 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        # beta_groups:
+        #   - Internal Testers
