@@ -2,9 +2,8 @@ workflows:
   ios_to_testflight:
     name: iOS → TestFlight
 
-    # (optional) keep this — it helps you see which integration the workflow expects in the UI
     integrations:
-      app_store_connect: "gbaz 15/9"
+      app_store_connect: "gbaz 15/9"   # exact name from Team → Integrations
 
     environment:
       xcode: 16.4
@@ -12,23 +11,16 @@ workflows:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
-        # TEAM_ID not needed when using Codemagic's profiles helper
-        # TEAM_ID: "8WPD9W2B39"
 
     scripts:
-      # 1) Fetch/create signing files and import to keychain
       - name: Fetch signing files from App Store Connect
         script: |
           set -e
-          # Creates or fetches a Distribution certificate + App Store profile for your BUNDLE_ID
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-          # Initialize the build keychain and import downloaded certs
           keychain initialize
           keychain add-certificates
-          # Make Xcode use the downloaded provisioning profiles automatically
           xcode-project use-profiles
 
-      # 2) (Optional) Auto-detect scheme if your scheme name changes
       - name: Ensure scheme (auto-detect if missing)
         script: |
           set -e
@@ -40,7 +32,6 @@ workflows:
             echo "export XCODE_SCHEME=\"$DETECTED_SCHEME\"" >> $CM_ENV
           fi
 
-      # 3) Build + export IPA (Codemagic helper handles ExportOptionsPlist)
       - name: Build IPA
         script: |
           set -e
@@ -55,7 +46,6 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        integration: "gbaz 15/9"   # << ADD THIS (exact name from Integrations)
         submit_to_testflight: true
         # beta_groups:
         #   - Internal Testers
