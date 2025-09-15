@@ -2,7 +2,7 @@ workflows:
   ios_to_testflight:
     name: iOS → TestFlight
     integrations:
-      app_store_connect: "gbaz-asc"
+      app_store_connect: "gbaz 15/9"
     environment:
       xcode: 16.4
       vars:
