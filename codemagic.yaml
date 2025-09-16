@@ -23,6 +23,41 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
+      - name: Normalize asset catalog layout (1/2)
+        script: |
+          set -e
+          CATALOG="HelloWorld/Assets.xcassets"
+          # If a file exists at the catalog path, back it up
+          if [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ]; then
+            echo "Found non-directory at $CATALOG, backing up…"
+            mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
+          fi
+          # Move lowercase root catalog into place if present
+          if [ -d "assets.xcassets" ]; then
+            mkdir -p "HelloWorld"
+            mv -f "assets.xcassets" "$CATALOG"
+          fi
+          # Normalize common casing inside
+          if [ -d "$CATALOG/appicon.appiconset" ]; then
+            mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
+          fi
+          if [ -f "$CATALOG/AppIcon.appiconset/contents.json" ]; then
+            mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
+          fi
+          echo "=== Assets tree ==="
+          find "$CATALOG" -maxdepth 2 -print || true
+
+      - name: Update project references (2/2)
+        script: |
+          set -e
+          PBXPROJ="HelloWorld.xcodeproj/project.pbxproj"
+          # Make sure project points to the normalized paths/names
+          /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBXPROJ" || true
+          /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBXPROJ" || true
+          /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBXPROJ" || true
+          echo "=== pbxproj matches ==="
+          /usr/bin/grep -n "Assets.xcassets\|AppIcon" "$PBXPROJ" || true
+
       - name: Quick fix AppIcon
         script: |
           set -e
