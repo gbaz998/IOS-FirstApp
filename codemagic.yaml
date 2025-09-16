@@ -1,3 +1,103 @@
+workflows:
+  ios_to_testflight:
+    name: iOS → TestFlight
+
+    integrations:
+      app_store_connect: "gbaz 15/9"
+
+    environment:
+      xcode: 16.4
+      vars:
+        XCODE_PROJECT: "HelloWorld.xcodeproj"
+        XCODE_SCHEME: "HelloWorld"
+        BUNDLE_ID: "au.gbaz.app"
+
+    scripts:
+      - name: Check cert/profile envs (debug)
+        script: |
+          set -e
+          echo "=== Cert/Profile envs present (passwords redacted) ==="
+          env | grep -E 'CM_.*(CERTIFICATE|PROVISIONING_PROFILE)' | sed -E 's/(PASSWORD)=[^ ]+/\1=[redacted]/g' || true
+
+      - name: Import .p12 (with private key) + provisioning profile
+        script: |
+          set -euo pipefail
+          keychain initialize
+
+          # Find an uploaded .p12 env var (CM_CERTIFICATE or CM_CERTIFICATE_*)
+          CERT_VAR="$(env | grep -E '^CM_CERTIFICATE(_[0-9]+)?=' | head -n1 | cut -d= -f1 || true)"
+          if [ -z "${CERT_VAR:-}" ]; then
+            echo "ERROR: No CM_CERTIFICATE env found."
+            echo "Upload your .p12: Team → Code signing identities → iOS certificates (same Team as this app)."
+            exit 1
+          fi
+          CERT_PATH="${!CERT_VAR}"
+
+          PASS_VAR="${CERT_VAR/_CERTIFICATE/_CERTIFICATE_PASSWORD}"
+          if [ -z "${!PASS_VAR:-}" ]; then
+            echo "ERROR: No password set for $CERT_VAR (expected $PASS_VAR). Re-upload the .p12 with a password."
+            exit 1
+          fi
+          CERT_PASS="${!PASS_VAR}"
+
+          if [ ! -f "$CERT_PATH" ]; then
+            echo "ERROR: $CERT_VAR points to a missing file: $CERT_PATH"
+            exit 1
+          fi
+          echo "Using certificate file: $CERT_PATH"
+          keychain add-certificates --certificate "$CERT_PATH" --certificate-password "$CERT_PASS"
+
+          # Prefer an uploaded provisioning profile; fallback to ASC fetch
+          if [ -n "${CM_PROVISIONING_PROFILE:-}" ] && [ -f "${CM_PROVISIONING_PROFILE}" ]; then
+            mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+            cp "$CM_PROVISIONING_PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles"/
+            echo "Installed uploaded provisioning profile."
+          else
+            echo "No uploaded provisioning profile detected — fetching from App Store Connect…"
+            app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE
+          fi
+
+          xcode-project use-profiles
+          echo "=== Code signing identities ==="
+          security find-identity -v -p codesigning || true
+
+      - name: Auto-bump build number (CFBundleVersion)
+        script: |
+          set -e
+          PLIST=$(xcodebuild -showBuildSettings -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release 2>/dev/null | awk -F'= ' '/INFOPLIST_FILE/ {print $2; exit}')
+          if [ -n "${PLIST:-}" ] && [ -f "$PLIST" ]; then
+            NEW_BUILD=$(date +%Y%m%d%H%M)
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
+            echo "Set CFBundleVersion to $NEW_BUILD"
+          else
+            echo "Could not locate Info.plist; skipping bump"
+          fi
+
+      - name: Ensure scheme (auto-detect if missing)
+        script: |
+          set -e
+          echo "=== Schemes ==="
+          xcodebuild -list -project "$XCODE_PROJECT" || true
+          if ! xcodebuild -list -project "$XCODE_PROJECT" | grep -q "^\s*$XCODE_SCHEME$"; then
+            DETECTED_SCHEME=$(xcodebuild -list -project "$XCODE_PROJECT" | awk '/Schemes:/{p=1;next} p&&NF{print $0} !NF&&p{exit}' | head -n1 | sed 's/^[[:space:]]*//')
+            echo "Using detected scheme: $DETECTED_SCHEME"
+            echo "export XCODE_SCHEME=\"$DETECTED_SCHEME\"" >> $CM_ENV
+          fi
+
+      - name: Build IPA
+        script: |
+          set -e
+          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - $CM_BUILD_DIR/*.ipa
+      - $CM_BUILD_DIR/app.xcarchive
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
 - name: Set up automatic codesigning
   script: |
     keychain initialize
