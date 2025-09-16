@@ -7,6 +7,8 @@ workflows:
 
     environment:
       xcode: 16.4
+      groups:
+        - gbaz
       vars:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
