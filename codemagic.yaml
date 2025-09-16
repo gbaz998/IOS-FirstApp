@@ -27,23 +27,33 @@ workflows:
         script: |
           set -e
           CATALOG="HelloWorld/Assets.xcassets"
-          # If a file exists at the catalog path, back it up
+
+          # If a non-directory exists at the catalog path, back it up
           if [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ]; then
             echo "Found non-directory at $CATALOG, backing up…"
             mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
           fi
+
           # Move lowercase root catalog into place if present
           if [ -d "assets.xcassets" ]; then
-            mkdir -p "HelloWorld"
-            mv -f "assets.xcassets" "$CATALOG"
+            if [ ! -d "$CATALOG" ]; then
+              mkdir -p "HelloWorld"
+              mv -f "assets.xcassets" "$CATALOG"
+            else
+              echo "Merging assets.xcassets into $CATALOG…"
+              cp -R "assets.xcassets/." "$CATALOG/" || true
+              rm -rf "assets.xcassets"
+            fi
           fi
+
           # Normalize common casing inside
-          if [ -d "$CATALOG/appicon.appiconset" ]; then
+          if [ -d "$CATALOG/appicon.appiconset" ] && [ ! -d "$CATALOG/AppIcon.appiconset" ]; then
             mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
           fi
           if [ -f "$CATALOG/AppIcon.appiconset/contents.json" ]; then
             mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
           fi
+
           echo "=== Assets tree ==="
           find "$CATALOG" -maxdepth 2 -print || true
 
@@ -51,26 +61,40 @@ workflows:
         script: |
           set -e
           PBXPROJ="HelloWorld.xcodeproj/project.pbxproj"
-          # Make sure project points to the normalized paths/names
           /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBXPROJ" || true
           /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBXPROJ" || true
           /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBXPROJ" || true
           echo "=== pbxproj matches ==="
           /usr/bin/grep -n "Assets.xcassets\|AppIcon" "$PBXPROJ" || true
 
-      - name: Quick fix AppIcon
+      - name: Quick fix AppIcon (robust)
         script: |
           set -e
-          APPICON="HelloWorld/Assets.xcassets/AppIcon.appiconset"
+          CATALOG="HelloWorld/Assets.xcassets"
+          APPICON="$CATALOG/AppIcon.appiconset"
+
+          # If AppIcon path exists but isn't a directory, back it up
+          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
+            echo "Found file at $APPICON; backing it up…"
+            mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
+          fi
+
+          # Ensure correct structure
           mkdir -p "$APPICON"
-          # If Contents.json is missing or invalid, write a minimal valid one
+
+          # Minimal valid Contents.json if missing/invalid
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           fi
-          # Ensure the 1024x1024 icon exists
+
+          # Ensure a 1024x1024 icon exists
           if [ ! -f "$APPICON/AppIcon-1024.png" ]; then
             /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
           fi
+
+          echo "Assets OK:"
+          ls -ld "$CATALOG" "$APPICON" || true
+          find "$APPICON" -maxdepth 1 -print || true
 
       - name: Build IPA
         script: |
