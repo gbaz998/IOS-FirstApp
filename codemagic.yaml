@@ -99,8 +99,8 @@ workflows:
         auth: integration
         submit_to_testflight: true
         
-- name: Set up automatic codesigning
-  script: |
+      - name: Set up automatic codesigning
+      script: |
     keychain initialize
     app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
 
