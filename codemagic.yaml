@@ -7,15 +7,14 @@ workflows:
 
     environment:
       xcode: 16.4
-      groups:
-        - gbaz
+      groups: [gbaz]
       vars:
         XCODE_PROJECT: "HelloWorld.xcodeproj"
         XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
 
     scripts:
-      - name: Set up automatic codesigning
+      - name: Codesign (ASC)
         script: |
           set -e
           keychain initialize
@@ -23,124 +22,62 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Ensure iOS deployment target >= 12.0
+      - name: Prep project (target 12.0 + assets paths)
         script: |
           set -e
-          PBXPROJ="HelloWorld.xcodeproj/project.pbxproj"
-          # Force all target/config entries to 12.0 (safe with iOS 18 SDK)
-          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBXPROJ" || \
-          /usr/bin/sed -i  -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBXPROJ"
-
-      - name: Normalize asset catalog layout (1/2)
-        script: |
-          set -e
+          PBX="HelloWorld.xcodeproj/project.pbxproj"
+          # Bump min iOS to 12.0 (Xcode 16.4 SDK requires >=12)
+          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
+          # Ensure canonical asset paths/casing
           CATALOG="HelloWorld/Assets.xcassets"
-          if [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ]; then
-            mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
-          fi
-          if [ -d "assets.xcassets" ]; then
-            if [ ! -d "$CATALOG" ]; then
-              mkdir -p "HelloWorld"
-              mv -f "assets.xcassets" "$CATALOG"
-            else
-              cp -R "assets.xcassets/." "$CATALOG/" || true
-              rm -rf "assets.xcassets"
-            fi
-          fi
-          if [ -d "$CATALOG/appicon.appiconset" ] && [ ! -d "$CATALOG/AppIcon.appiconset" ]; then
-            mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
-          fi
-          if [ -f "$CATALOG/AppIcon.appiconset/contents.json" ]; then
-            mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
-          fi
+          [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ] && mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
+          [ -d assets.xcassets ] && { mkdir -p HelloWorld; [ -d "$CATALOG" ] || mv -f assets.xcassets "$CATALOG"; }
+          [ -d "$CATALOG/appicon.appiconset" ] && mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
+          [ -f "$CATALOG/AppIcon.appiconset/contents.json" ] && mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
+          # Update project refs
+          /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBX" || true
+          /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBX" || true
+          /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
 
-      - name: Update project references (2/2)
+      - name: Fix resources (AppIcon + storyboards)
         script: |
           set -e
-          PBXPROJ="HelloWorld.xcodeproj/project.pbxproj"
-          /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBXPROJ" || true
-          /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBXPROJ" || true
-          /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBXPROJ" || true
-
-      - name: Quick fix AppIcon (robust)
-        script: |
-          set -e
-          CATALOG="HelloWorld/Assets.xcassets"
-          APPICON="$CATALOG/AppIcon.appiconset"
-          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
-            mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
-          fi
+          CATALOG="HelloWorld/Assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
+          [ -e "$APPICON" ] && [ ! -d "$APPICON" ] && mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
           mkdir -p "$APPICON"
+          # Minimal valid AppIcon if missing/invalid
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           fi
-          if [ ! -f "$APPICON/AppIcon-1024.png" ]; then
-            /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
-          fi
+          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
 
-      - name: Validate & auto-repair storyboards
-        script: |
-          set -e
+          # Ensure valid Main & Launch storyboards (create minimal if missing/invalid)
           MAIN="HelloWorld/Base.lproj/Main.storyboard"
           LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
           mkdir -p "HelloWorld/Base.lproj"
-
-          validate_sb() {
-            local SB="$1"
-            if [ -f "$SB" ]; then
-              /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/$(basename "$SB" .storyboard).cib "$SB" >/dev/null 2>&1 && return 0
-            fi
-            return 1
-          }
-
-          # If invalid/missing, write minimal valid files
-          if ! validate_sb "$MAIN"; then
+          validate_sb() { /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/$(basename "$1" .storyboard).cib "$1" >/dev/null 2>&1; }
+          if ! [ -f "$MAIN" ] || ! validate_sb "$MAIN"; then
             cat > "$MAIN" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" colorMatched="YES" initialViewController="VC">
-  <scenes>
-    <scene sceneID="scene">
-      <objects>
-        <viewController id="VC" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="view">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC">
+  <scenes><scene><objects>
+    <viewController id="VC"><view key="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController>
+    <placeholder placeholderIdentifier="IBFirstResponder" id="responder"/>
+  </objects></scene></scenes>
 </document>
 XML
           fi
-
-          if ! validate_sb "$LAUNCH"; then
+          if ! [ -f "$LAUNCH" ] || ! validate_sb "$LAUNCH"; then
             cat > "$LAUNCH" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" colorMatched="YES">
-  <scenes>
-    <scene sceneID="launch">
-      <objects>
-        <viewController id="launchVC" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="launchView">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" systemColor="systemBackgroundColor"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES">
+  <scenes><scene><objects>
+    <viewController id="L"><view key="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController>
+    <placeholder placeholderIdentifier="IBFirstResponder" id="LR"/>
+  </objects></scene></scenes>
 </document>
 XML
           fi
-
-          # Re-validate to fail fast if still broken
-          /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/Main.cib "$MAIN"
-          /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/Launch.cib "$LAUNCH"
 
       - name: Build IPA
         script: |
@@ -155,5 +92,4 @@ XML
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        # beta_groups:
-        #   - Internal Testers
+
