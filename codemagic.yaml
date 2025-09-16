@@ -90,19 +90,20 @@ workflows:
           set -e
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
+      - name: Set up automatic codesigning (fallback)
+        script: |
+          set -e
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+
     artifacts:
-      - $CM_BUILD_DIR/*.ipa
-      - $CM_BUILD_DIR/app.xcarchive
-
-      - name: Set up automatic codesigning
-      script: |
-    keychain initialize
-    app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-
-    keychain add-certificates
-    xcode-project use-profiles
+      - "$CM_BUILD_DIR/*.ipa"
+      - "$CM_BUILD_DIR/app.xcarchive"
 
     publishing:
       app_store_connect:
         auth: integration
+        connection: "gbaz 15/9"
         submit_to_testflight: true
