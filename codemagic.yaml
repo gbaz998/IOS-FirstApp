@@ -94,11 +94,6 @@ workflows:
       - $CM_BUILD_DIR/*.ipa
       - $CM_BUILD_DIR/app.xcarchive
 
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        
       - name: Set up automatic codesigning
       script: |
     keychain initialize
@@ -106,3 +101,8 @@ workflows:
 
     keychain add-certificates
     xcode-project use-profiles
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
