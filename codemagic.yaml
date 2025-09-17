@@ -22,11 +22,52 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
+      - name: Heal asset catalog (root + AppIcon)
+        script: |
+          set -e
+          CATALOG="HelloWorld/Assets.xcassets"
+          ROOT_JSON="$CATALOG/Contents.json"
+          APPICON="$CATALOG/AppIcon.appiconset"
+
+          # If catalog exists but isn't a dir, back it up; then ensure folder
+          if [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ]; then
+            echo "Backing up non-directory $CATALOG"
+            mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
+          fi
+          mkdir -p "$CATALOG"
+
+          # Ensure root Contents.json (needed by actool)
+          if [ ! -f "$ROOT_JSON" ] || ! plutil -lint "$ROOT_JSON" >/dev/null 2>&1; then
+            printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$ROOT_JSON"
+          fi
+
+          # Ensure AppIcon set exists and is valid
+          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
+            echo "Backing up non-directory $APPICON"
+            mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
+          fi
+          mkdir -p "$APPICON"
+
+          if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
+            printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
+          fi
+
+          if [ ! -f "$APPICON/AppIcon-1024.png" ]; then
+            /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 \
+              /System/Library/CoreServices/DefaultDesktop.jpg \
+              --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
+          fi
+
+          echo "=== Assets tree ==="
+          find "$CATALOG" -maxdepth 2 -print || true
+          echo "=== Lint ==="
+          plutil -lint "$ROOT_JSON" "$APPICON/Contents.json" || true
+
       - name: Build IPA
         script: |
           set -e
-          # Keep min iOS in sync (optional; remove if set in Xcode)
-          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' HelloWorld.xcodeproj/project.pbxproj || true
+          # Optional: keep min iOS in sync with your target
+          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' HelloWorld.xcodeproj/project.pbxproj || true
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
