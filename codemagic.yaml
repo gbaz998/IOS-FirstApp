@@ -94,8 +94,7 @@ workflows:
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
-      - "$CM_BUILD_DIR/*.ipa"
-      - "$CM_BUILD_DIR/app.xcarchive"
+      - build/ios/ipa/HelloWorld.ipa
 
     publishing:
       app_store_connect:
