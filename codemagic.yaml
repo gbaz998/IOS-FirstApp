@@ -38,12 +38,20 @@ workflows:
 
           # Merge any stray catalogs into canonical, then remove strays
           for SRC in assets.xcassets helloworld/assets.xcassets HelloWorld/assets.xcassets Assets.xcassets; do
-            [ -d "$SRC" ] && [ "$SRC" != "$CANON" ] && { cp -R "$SRC/." "$CANON/" || true; rm -rf "$SRC"; }
+            if [ -d "$SRC" ] && [ "$SRC" != "$CANON" ]; then
+              cp -R "$SRC/." "$CANON/" || true
+              rm -rf "$SRC"
+            fi
           done
 
           # Normalize AppIcon casing and structure
-          [ -e "$APPICON" ] && [ ! -d "$APPICON" ] && { TS=$(date +%s); mv -f "$APPICON" "${APPICON}.bak.$TS"; }
-          [ -d "$CANON/appicon.appiconset" ] && [ ! -d "$APPICON" ] && mv -f "$CANON/appicon.appiconset" "$APPICON"
+          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
+            TS=$(date +%s)
+            mv -f "$APPICON" "${APPICON}.bak.$TS"
+          fi
+          if [ -d "$CANON/appicon.appiconset" ] && [ ! -d "$APPICON" ]; then
+            mv -f "$CANON/appicon.appiconset" "$APPICON"
+          fi
           mkdir -p "$APPICON"
           [ -f "$APPICON/contents.json" ] && mv -f "$APPICON/contents.json" "$APPICON/Contents.json"
 
@@ -70,10 +78,14 @@ workflows:
           validate_sb() { "$IB" --compile "/tmp/$(basename "$1" .storyboard).cib" "$1" >/dev/null 2>&1; }
 
           if ! [ -f "$MAIN" ] || ! validate_sb "$MAIN"; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$MAIN"
+            cat > "$MAIN" <<'SB'
+<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>
+SB
           fi
           if ! [ -f "$LAUNCH" ] || ! validate_sb "$LAUNCH"; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$LAUNCH"
+            cat > "$LAUNCH" <<'SB'
+<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>
+SB
           fi
 
           "$IB" --compile /tmp/Main.cib "$MAIN"
@@ -83,17 +95,12 @@ workflows:
         script: |
           set -e
           mkdir -p HelloWorld
-
-          # Move lowercased files to canonical locations if they exist
+          # Move your existing files into canonical paths (case-sensitive)
           [ -f helloworld/helloworld/viewcontroller.swift ] && mv -f helloworld/helloworld/viewcontroller.swift HelloWorld/ViewController.swift
           [ -f helloworld/appdelegate.swift ] && mv -f helloworld/appdelegate.swift HelloWorld/AppDelegate.swift
-
-          # Handle other common case variants just in case
+          # Handle other common variants
           [ -f helloworld/HelloWorld/ViewController.swift ] && mv -f helloworld/HelloWorld/ViewController.swift HelloWorld/ViewController.swift
           [ -f helloworld/AppDelegate.swift ] && mv -f helloworld/AppDelegate.swift HelloWorld/AppDelegate.swift
-
-          echo "=== Swift sources after relocate ==="
-          ls -l HelloWorld 2>/dev/null || true
 
       - name: Ensure Swift sources (create only if missing)
         script: |
@@ -101,31 +108,31 @@ workflows:
           SRC="HelloWorld"
           mkdir -p "$SRC"
 
-          # AppDelegate.swift (only if missing)
           if [ ! -f "$SRC/AppDelegate.swift" ]; then
-            printf '%s\n' \
-'import UIKit' \
-'@UIApplicationMain' \
-'class AppDelegate: UIResponder, UIApplicationDelegate {' \
-'  var window: UIWindow?' \
-'  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }' \
-'}' > "$SRC/AppDelegate.swift"
+            cat > "$SRC/AppDelegate.swift" <<'SWIFT'
+import UIKit
+@UIApplicationMain
+class AppDelegate: UIResponder, UIApplicationDelegate {
+  var window: UIWindow?
+  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
+}
+SWIFT
           fi
 
-          # ViewController.swift with iOS 12 fallback (only if missing)
           if [ ! -f "$SRC/ViewController.swift" ]; then
-            printf '%s\n' \
-'import UIKit' \
-'class ViewController: UIViewController {' \
-'  override func viewDidLoad() {' \
-'    super.viewDidLoad()' \
-'    if #available(iOS 13.0, *) {' \
-'      view.backgroundColor = .systemBackground' \
-'    } else {' \
-'      view.backgroundColor = .white' \
-'    }' \
-'  }' \
-'}' > "$SRC/ViewController.swift"
+            cat > "$SRC/ViewController.swift" <<'SWIFT'
+import UIKit
+class ViewController: UIViewController {
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    if #available(iOS 13.0, *) {
+      view.backgroundColor = .systemBackground
+    } else {
+      view.backgroundColor = .white
+    }
+  }
+}
+SWIFT
           fi
 
           echo "=== Swift sources present ==="
@@ -163,4 +170,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
