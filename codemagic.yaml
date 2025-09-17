@@ -101,6 +101,7 @@ workflows:
 
           if [ ! -f "$SRC/AppDelegate.swift" ]; then
             cat > "$SRC/AppDelegate.swift" <<'SWIFT'
+            
 import UIKit
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
