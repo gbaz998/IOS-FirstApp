@@ -88,26 +88,19 @@ workflows:
                           '}' > "$SRC/ViewController.swift"
           fi
 
-          - name: Ensure Info.plist usage descriptions
-  script: |
-    set -e
-    PLIST="HelloWorld/Info.plist"   # change if yours lives elsewhere
-
-    ensure() {
-      /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null \
-      || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
-    }
-
-    # Permissions you need:
-    ensure NSMicrophoneUsageDescription "Needed for sound recognition."
-    ensure NSLocationWhenInUseUsageDescription "Needed to place discoveries on the Sydney CBD map."
-    # Optional (only if you request Always location):
-    # ensure NSLocationAlwaysAndWhenInUseUsageDescription "Needed to update locations in the background."
-
-    # (Recommended) Make sure storyboard keys exist:
-    ensure UIMainStoryboardFile "Main"
-    ensure UILaunchStoryboardName "LaunchScreen"
-
+      - name: Ensure Info.plist usage descriptions
+        script: |
+          set -e
+          PLIST="HelloWorld/Info.plist"
+          ensure() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
+          # Permissions you need:
+          ensure NSMicrophoneUsageDescription "Needed for sound recognition."
+          ensure NSLocationWhenInUseUsageDescription "Needed to place discoveries on the Sydney CBD map."
+          # Optional (only if you request Always location):
+          # ensure NSLocationAlwaysAndWhenInUseUsageDescription "Needed to update locations in the background."
+          # Make sure storyboard keys exist:
+          ensure UIMainStoryboardFile "Main"
+          ensure UILaunchStoryboardName "LaunchScreen"
 
       - name: Build IPA
         script: |
