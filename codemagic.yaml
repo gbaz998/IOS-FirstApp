@@ -29,58 +29,34 @@ workflows:
           ROOT_JSON="$CANON/Contents.json"
           APPICON="$CANON/AppIcon.appiconset"
 
-          echo "=== Pre-check ==="
-          ls -ld "HelloWorld" 2>/dev/null || true
-          ls -ld "$CANON" 2>/dev/null || true
-
           # If canonical path exists as a file, back it up then create dir
           if [ -e "$CANON" ] && [ ! -d "$CANON" ]; then
             TS=$(date +%s)
-            echo "Found file at $CANON → backing up to ${CANON}.bak.$TS"
             mv -f "$CANON" "${CANON}.bak.$TS"
           fi
           mkdir -p "$CANON"
 
           # Merge any stray catalogs into canonical, then remove strays
           for SRC in assets.xcassets helloworld/assets.xcassets HelloWorld/assets.xcassets Assets.xcassets; do
-            if [ -d "$SRC" ] && [ "$SRC" != "$CANON" ]; then
-              echo "Merging $SRC → $CANON"
-              cp -R "$SRC/." "$CANON/" || true
-              rm -rf "$SRC"
-            fi
+            [ -d "$SRC" ] && [ "$SRC" != "$CANON" ] && { cp -R "$SRC/." "$CANON/" || true; rm -rf "$SRC"; }
           done
 
           # Normalize AppIcon casing and structure
-          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
-            TS=$(date +%s)
-            echo "Found file at $APPICON → backing up to ${APPICON}.bak.$TS"
-            mv -f "$APPICON" "${APPICON}.bak.$TS"
-          fi
-          if [ -d "$CANON/appicon.appiconset" ] && [ ! -d "$APPICON" ]; then
-            mv -f "$CANON/appicon.appiconset" "$APPICON"
-          fi
+          [ -e "$APPICON" ] && [ ! -d "$APPICON" ] && { TS=$(date +%s); mv -f "$APPICON" "${APPICON}.bak.$TS"; }
+          [ -d "$CANON/appicon.appiconset" ] && [ ! -d "$APPICON" ] && mv -f "$CANON/appicon.appiconset" "$APPICON"
           mkdir -p "$APPICON"
           [ -f "$APPICON/contents.json" ] && mv -f "$APPICON/contents.json" "$APPICON/Contents.json"
 
-          # Ensure root Contents.json (actool needs this)
+          # Ensure root Contents.json
           if [ ! -f "$ROOT_JSON" ] || ! plutil -lint "$ROOT_JSON" >/dev/null 2>&1; then
             printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$ROOT_JSON"
           fi
 
-          # Ensure AppIcon is minimally valid (will be replaced by your real icons later)
+          # Minimal valid AppIcon
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           fi
-          if [ ! -f "$APPICON/AppIcon-1024.png" ]; then
-            /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 \
-              /System/Library/CoreServices/DefaultDesktop.jpg \
-              --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
-          fi
-
-          echo "=== Assets tree ==="
-          find "$CANON" -maxdepth 2 -print || true
-          echo "=== Lint ==="
-          plutil -lint "$ROOT_JSON" "$APPICON/Contents.json" || true
+          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
 
       - name: Validate & auto-repair storyboards
         script: |
@@ -93,7 +69,6 @@ workflows:
 
           validate_sb() { "$IB" --compile "/tmp/$(basename "$1" .storyboard).cib" "$1" >/dev/null 2>&1; }
 
-          # Write minimal, valid one-line storyboards if missing or invalid
           if ! [ -f "$MAIN" ] || ! validate_sb "$MAIN"; then
             printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$MAIN"
           fi
@@ -101,9 +76,60 @@ workflows:
             printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$LAUNCH"
           fi
 
-          # Final validation (fail fast if still broken)
           "$IB" --compile /tmp/Main.cib "$MAIN"
           "$IB" --compile /tmp/Launch.cib "$LAUNCH"
+
+      - name: Relocate Swift sources to expected paths/casing
+        script: |
+          set -e
+          mkdir -p HelloWorld
+
+          # Move lowercased files to canonical locations if they exist
+          [ -f helloworld/helloworld/viewcontroller.swift ] && mv -f helloworld/helloworld/viewcontroller.swift HelloWorld/ViewController.swift
+          [ -f helloworld/appdelegate.swift ] && mv -f helloworld/appdelegate.swift HelloWorld/AppDelegate.swift
+
+          # Handle other common case variants just in case
+          [ -f helloworld/HelloWorld/ViewController.swift ] && mv -f helloworld/HelloWorld/ViewController.swift HelloWorld/ViewController.swift
+          [ -f helloworld/AppDelegate.swift ] && mv -f helloworld/AppDelegate.swift HelloWorld/AppDelegate.swift
+
+          echo "=== Swift sources after relocate ==="
+          ls -l HelloWorld 2>/dev/null || true
+
+      - name: Ensure Swift sources (create only if missing)
+        script: |
+          set -e
+          SRC="HelloWorld"
+          mkdir -p "$SRC"
+
+          # AppDelegate.swift (only if missing)
+          if [ ! -f "$SRC/AppDelegate.swift" ]; then
+            printf '%s\n' \
+'import UIKit' \
+'@UIApplicationMain' \
+'class AppDelegate: UIResponder, UIApplicationDelegate {' \
+'  var window: UIWindow?' \
+'  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }' \
+'}' > "$SRC/AppDelegate.swift"
+          fi
+
+          # ViewController.swift with iOS 12 fallback (only if missing)
+          if [ ! -f "$SRC/ViewController.swift" ]; then
+            printf '%s\n' \
+'import UIKit' \
+'class ViewController: UIViewController {' \
+'  override func viewDidLoad() {' \
+'    super.viewDidLoad()' \
+'    if #available(iOS 13.0, *) {' \
+'      view.backgroundColor = .systemBackground' \
+'    } else {' \
+'      view.backgroundColor = .white' \
+'    }' \
+'  }' \
+'}' > "$SRC/ViewController.swift"
+          fi
+
+          echo "=== Swift sources present ==="
+          ls -l "$SRC"/AppDelegate.swift "$SRC"/ViewController.swift
 
       - name: Normalize project refs (assets + AppIcon + min iOS)
         script: |
@@ -137,3 +163,4 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
