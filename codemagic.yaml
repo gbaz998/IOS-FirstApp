@@ -40,18 +40,21 @@ workflows:
             rm -rf helloworld/assets.xcassets
           fi
 
-          # If AppIcon path exists but isn't a dir, back it up
+          # If paths exist as files (not dirs), back them up
+          if [ -e "$CANON" ] && [ ! -d "$CANON" ]; then
+            mv -f "$CANON" "${CANON}.bak.$(date +%s)"
+            mkdir -p "$CANON"
+          fi
           if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
-            TS=$(date +%s)
-            mv -f "$APPICON" "${APPICON}.bak.$TS"
+            mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
           fi
 
-          # Fix casing inside
+          # Fix casing inside and ensure structure
           [ -d "$CANON/appicon.appiconset" ] && mv -f "$CANON/appicon.appiconset" "$APPICON"
           mkdir -p "$APPICON"
           [ -f "$APPICON/contents.json" ] && mv -f "$APPICON/contents.json" "$APPICON/Contents.json"
 
-          # Ensure root Contents.json
+          # Ensure root Contents.json (actool reads tags from here)
           if [ ! -f "$ROOT_JSON" ] || ! plutil -lint "$ROOT_JSON" >/dev/null 2>&1; then
             printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$ROOT_JSON"
           fi
@@ -68,14 +71,36 @@ workflows:
 
           echo "=== Assets tree ==="
           find "$CANON" -maxdepth 2 -print || true
-          echo "=== Lint ==="
-          plutil -lint "$ROOT_JSON" "$APPICON/Contents.json" || true
+
+      - name: Normalize project refs (assets + AppIcon + min iOS)
+        script: |
+          set -e
+          PBX="HelloWorld.xcodeproj/project.pbxproj"
+          # If your project is elsewhere, adjust PBX path or set XCODE_PROJECT accordingly
+
+          # macOS sed in place; ignore if not found
+          /usr/bin/sed -i '' -E 's/assets\.xcassets/Assets.xcassets/g' "$PBX" || true
+          /usr/bin/sed -i '' -E 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBX" || true
+          /usr/bin/sed -i '' -E 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
+          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+/IPHONEOS_DEPLOYMENT_TARGET = 12.0/' "$PBX" || true
+
+          echo "=== pbxproj matches ==="
+          /usr/bin/grep -n "Assets.xcassets\|AppIcon" "$PBX" || true
+
+      - name: Ensure Info.plist usage descriptions
+        script: |
+          set -e
+          PLIST="HelloWorld/Info.plist"
+          ensure() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
+          ensure UIMainStoryboardFile "Main"
+          ensure UILaunchStoryboardName "LaunchScreen"
+          ensure NSMicrophoneUsageDescription "Needed for sound recognition."
+          ensure NSLocationWhenInUseUsageDescription "Needed to place discoveries on the Sydney CBD map."
+          # Add more keys here if you use them (camera/photos/etc.)
 
       - name: Build IPA
         script: |
           set -e
-          # Optional: keep min iOS in sync
-          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' HelloWorld.xcodeproj/project.pbxproj || true
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
@@ -86,4 +111,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
