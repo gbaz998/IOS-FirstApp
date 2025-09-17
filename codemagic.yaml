@@ -44,7 +44,7 @@ workflows:
             fi
           done
 
-          # Normalize AppIcon casing and structure
+          # Normalize AppIcon casing/structure
           if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
             TS=$(date +%s)
             mv -f "$APPICON" "${APPICON}.bak.$TS"
@@ -66,30 +66,21 @@ workflows:
           fi
           [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
 
-      - name: Validate & auto-repair storyboards
+      - name: Write minimal storyboards (Python; avoids raw XML in YAML)
         script: |
           set -e
-          IB="/Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool"
-          BASE="HelloWorld/Base.lproj"
-          MAIN="$BASE/Main.storyboard"
-          LAUNCH="$BASE/LaunchScreen.storyboard"
-          mkdir -p "$BASE"
-
-          validate_sb() { "$IB" --compile "/tmp/$(basename "$1" .storyboard).cib" "$1" >/dev/null 2>&1; }
-
-          if ! [ -f "$MAIN" ] || ! validate_sb "$MAIN"; then
-            cat > "$MAIN" <<'SB'
-<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>
-SB
-          fi
-          if ! [ -f "$LAUNCH" ] || ! validate_sb "$LAUNCH"; then
-            cat > "$LAUNCH" <<'SB'
-<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>
-SB
-          fi
-
-          "$IB" --compile /tmp/Main.cib "$MAIN"
-          "$IB" --compile /tmp/Launch.cib "$LAUNCH"
+          /usr/bin/python3 - <<'PY'
+          import os
+          base = os.path.join("HelloWorld", "Base.lproj")
+          os.makedirs(base, exist_ok=True)
+          main = os.path.join(base, "Main.storyboard")
+          launch = os.path.join(base, "LaunchScreen.storyboard")
+          main_xml = '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>'
+          launch_xml = '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>'
+          with open(main, "w") as f: f.write(main_xml)
+          with open(launch, "w") as f: f.write(launch_xml)
+          print("Wrote:", main, launch)
+          PY
 
       - name: Relocate Swift sources to expected paths/casing
         script: |
@@ -135,9 +126,6 @@ class ViewController: UIViewController {
 SWIFT
           fi
 
-          echo "=== Swift sources present ==="
-          ls -l "$SRC"/AppDelegate.swift "$SRC"/ViewController.swift
-
       - name: Normalize project refs (assets + AppIcon + min iOS)
         script: |
           set -e
@@ -151,6 +139,21 @@ SWIFT
         script: |
           set -e
           PLIST="HelloWorld/Info.plist"
+          # Create a minimal one if missing
+          if [ ! -f "$PLIST" ]; then
+            cat > "$PLIST" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>HelloWorld</string>
+  <key>CFBundleIdentifier</key><string>au.gbaz.app</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>UIMainStoryboardFile</key><string>Main</string>
+  <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
+</dict></plist>
+PLIST
+          fi
           ensure() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
           ensure UIMainStoryboardFile "Main"
           ensure UILaunchStoryboardName "LaunchScreen"
