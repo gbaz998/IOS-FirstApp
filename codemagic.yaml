@@ -1,103 +1,60 @@
 workflows:
-  ios_to_testflight:
-    name: iOS → TestFlight
-
+  ios-native-quick-start:
+    name: iOS Native
+    max_build_duration: 120
+    instance_type: mac_mini_m2
     integrations:
-      app_store_connect: "gbaz 15/9"
-
+      app_store_connect: codemagic
     environment:
-      xcode: 16.4
-      groups: [gbaz]
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: io.codemagic.sample.iosnative
       vars:
-        XCODE_PROJECT: "HelloWorld.xcodeproj"
-        XCODE_SCHEME: "HelloWorld"
-        BUNDLE_ID: "au.gbaz.app"
-
+        BUNDLE_ID: "io.codemagic.sample.iosnative"
+        XCODE_WORKSPACE: "CodemagicSample.xcworkspace"
+        XCODE_SCHEME: "CodemagicSample"
+        APP_STORE_APPLE_ID: 1555555551
+      xcode: latest # <-- set to specific version e.g. 14.3, 15.0 to avoid unexpected updates.
+      cocoapods: default
     scripts:
-      - name: Codesign (ASC)
-        script: |
-          set -e
-          keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
-          keychain add-certificates
-          xcode-project use-profiles
-
-      - name: Prep project (target 12.0 + assets paths)
-        script: |
-          set -e
-          PBX="HelloWorld.xcodeproj/project.pbxproj"
-          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
-          CATALOG="HelloWorld/Assets.xcassets"
-          [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ] && mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
-          [ -d assets.xcassets ] && { mkdir -p HelloWorld; [ -d "$CATALOG" ] || mv -f assets.xcassets "$CATALOG"; }
-          [ -d "$CATALOG/appicon.appiconset" ] && mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
-          [ -f "$CATALOG/AppIcon.appiconset/contents.json" ] && mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
-          /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBX" || true
-          /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBX" || true
-          /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
-
-      - name: Fix resources (AppIcon + storyboards)
-        script: |
-          set -e
-          CATALOG="HelloWorld/Assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
-          [ -e "$APPICON" ] && [ ! -d "$APPICON" ] && mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
-          mkdir -p "$APPICON"
-          if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
-            printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
-          fi
-          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
-          mkdir -p "HelloWorld/Base.lproj"
-          MAIN="HelloWorld/Base.lproj/Main.storyboard"
-          LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
-          IB="/Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool"
-          if ! [ -f "$MAIN" ] || ! "$IB" --compile /tmp/Main.cib "$MAIN" >/dev/null 2>&1; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$MAIN"
-          fi
-          if ! [ -f "$LAUNCH" ] || ! "$IB" --compile /tmp/Launch.cib "$LAUNCH" >/dev/null 2>&1; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$LAUNCH"
-          fi
-          "$IB" --compile /tmp/Main.cib "$MAIN"
-          "$IB" --compile /tmp/Launch.cib "$LAUNCH"
-
-      - name: Ensure Swift sources (AppDelegate + ViewController)
-        script: |
-          set -e
-          SRC="HelloWorld"
-          mkdir -p "$SRC"
-          # AppDelegate.swift (iOS 12+)
-          if [ ! -f "$SRC/AppDelegate.swift" ]; then
-            printf '%s\n' 'import UIKit' \
-                          '@UIApplicationMain' \
-                          'class AppDelegate: UIResponder, UIApplicationDelegate {' \
-                          '  var window: UIWindow?' \
-                          '  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }' \
-                          '}' > "$SRC/AppDelegate.swift"
-          fi
-          # ViewController.swift with iOS 12 fallback
-          if [ ! -f "$SRC/ViewController.swift" ]; then
-            printf '%s\n' 'import UIKit' \
-                          'class ViewController: UIViewController {' \
-                          '  override func viewDidLoad() {' \
-                          '    super.viewDidLoad()' \
-                          '    if #available(iOS 13.0, *) {' \
-                          '      view.backgroundColor = .systemBackground' \
-                          '    } else {' \
-                          '      view.backgroundColor = .white' \
-                          '    }' \
-                          '  }' \
-                          '}' > "$SRC/ViewController.swift"
-          fi
-
-      - name: Build IPA
-        script: |
-          set -e
-          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
-
+      - name: Install CocoaPods dependencies
+        script: | 
+          pod install
+      - name: Set up provisioning profiles settings on Xcode project
+        script: xcode-project use-profiles
+      - name: Increment build number
+        script: | 
+          cd $CM_BUILD_DIR
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID")
+          agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
+      - name: Build ipa for distribution
+        script: | 
+          xcode-project build-ipa \
+            --workspace "$CM_BUILD_DIR/$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
-      - "$CM_BUILD_DIR/*.ipa"
-      - "$CM_BUILD_DIR/app.xcarchive"
-
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
+      email:
+        recipients:
+          - user_1@example.com
+          - user_2@example.com
+        notify:
+          success: true
+          failure: false
       app_store_connect:
         auth: integration
+
+        # Configuration related to TestFlight (optional)
+        # Note: This action is performed during post-processing.
         submit_to_testflight: true
+        beta_groups: # Specify the names of beta tester groups that will get access to the build once it has passed beta review.
+          - group name 1
+          - group name 2
+
+        # Configuration related to App Store (optional)
+        # Note: This action is performed during post-processing.
+        submit_to_app_store: false
