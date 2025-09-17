@@ -22,44 +22,55 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Merge + heal asset catalog
+      - name: Merge + heal asset catalog (robust)
         script: |
           set -e
           CANON="HelloWorld/Assets.xcassets"
           ROOT_JSON="$CANON/Contents.json"
           APPICON="$CANON/AppIcon.appiconset"
 
-          # Merge any stray catalogs into canonical, then remove strays
-          mkdir -p "$CANON"
-          if [ -d assets.xcassets ]; then
-            cp -R assets.xcassets/. "$CANON/" || true
-            rm -rf assets.xcassets
-          fi
-          if [ -d helloworld/assets.xcassets ]; then
-            cp -R helloworld/assets.xcassets/. "$CANON/" || true
-            rm -rf helloworld/assets.xcassets
-          fi
+          echo "=== Pre-check ==="
+          ls -ld "HelloWorld" 2>/dev/null || true
+          ls -ld "$CANON" 2>/dev/null || true
 
-          # If paths exist as files (not dirs), back them up
+          # If canonical path exists as a file, back it up first, then create dir
           if [ -e "$CANON" ] && [ ! -d "$CANON" ]; then
-            mv -f "$CANON" "${CANON}.bak.$(date +%s)"
-            mkdir -p "$CANON"
+            TS=$(date +%s)
+            echo "Found file at $CANON → backing up to ${CANON}.bak.$TS"
+            mv -f "$CANON" "${CANON}.bak.$TS"
           fi
-          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
-            mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
-          fi
+          mkdir -p "$CANON"
 
-          # Fix casing inside and ensure structure
-          [ -d "$CANON/appicon.appiconset" ] && mv -f "$CANON/appicon.appiconset" "$APPICON"
+          # Merge any stray catalogs into canonical, then remove strays
+          for SRC in assets.xcassets helloworld/assets.xcassets HelloWorld/assets.xcassets Assets.xcassets; do
+            if [ -d "$SRC" ] && [ "$SRC" != "$CANON" ]; then
+              echo "Merging $SRC → $CANON"
+              cp -R "$SRC/." "$CANON/" || true
+              rm -rf "$SRC"
+            fi
+          done
+
+          # If AppIcon path exists as a file, back it up
+              # and normalize lowercase folder/file names
+          if [ -e "$APPICON" ] && [ ! -d "$APPICON" ]; then
+            TS=$(date +%s)
+            echo "Found file at $APPICON → backing up to ${APPICON}.bak.$TS"
+            mv -f "$APPICON" "${APPICON}.bak.$TS"
+          fi
+          if [ -d "$CANON/appicon.appiconset" ] && [ ! -d "$APPICON" ]; then
+            mv -f "$CANON/appicon.appiconset" "$APPICON"
+          fi
           mkdir -p "$APPICON"
-          [ -f "$APPICON/contents.json" ] && mv -f "$APPICON/contents.json" "$APPICON/Contents.json"
+          if [ -f "$APPICON/contents.json" ] && [ ! -f "$APPICON/Contents.json" ]; then
+            mv -f "$APPICON/contents.json" "$APPICON/Contents.json"
+          fi
 
           # Ensure root Contents.json (actool reads tags from here)
           if [ ! -f "$ROOT_JSON" ] || ! plutil -lint "$ROOT_JSON" >/dev/null 2>&1; then
             printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$ROOT_JSON"
           fi
 
-          # Minimal valid AppIcon if missing/invalid
+          # Ensure AppIcon set is valid and has a 1024 icon
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           fi
@@ -71,14 +82,15 @@ workflows:
 
           echo "=== Assets tree ==="
           find "$CANON" -maxdepth 2 -print || true
+          echo "=== Lint ==="
+          plutil -lint "$ROOT_JSON" "$APPICON/Contents.json" || true
 
       - name: Normalize project refs (assets + AppIcon + min iOS)
         script: |
           set -e
           PBX="HelloWorld.xcodeproj/project.pbxproj"
-          # If your project is elsewhere, adjust PBX path or set XCODE_PROJECT accordingly
+          # Adjust PBX if your .xcodeproj lives elsewhere
 
-          # macOS sed in place; ignore if not found
           /usr/bin/sed -i '' -E 's/assets\.xcassets/Assets.xcassets/g' "$PBX" || true
           /usr/bin/sed -i '' -E 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBX" || true
           /usr/bin/sed -i '' -E 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
@@ -96,7 +108,6 @@ workflows:
           ensure UILaunchStoryboardName "LaunchScreen"
           ensure NSMicrophoneUsageDescription "Needed for sound recognition."
           ensure NSLocationWhenInUseUsageDescription "Needed to place discoveries on the Sydney CBD map."
-          # Add more keys here if you use them (camera/photos/etc.)
 
       - name: Build IPA
         script: |
@@ -111,3 +122,4 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
