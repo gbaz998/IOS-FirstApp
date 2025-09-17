@@ -22,89 +22,11 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Prep project (target 12.0 + assets paths)
-        script: |
-          set -e
-          PBX="HelloWorld.xcodeproj/project.pbxproj"
-          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
-          CATALOG="HelloWorld/Assets.xcassets"
-          [ -e "$CATALOG" ] && [ ! -d "$CATALOG" ] && mv -f "$CATALOG" "${CATALOG}.bak.$(date +%s)"
-          [ -d assets.xcassets ] && { mkdir -p HelloWorld; [ -d "$CATALOG" ] || mv -f assets.xcassets "$CATALOG"; }
-          [ -d "$CATALOG/appicon.appiconset" ] && mv -f "$CATALOG/appicon.appiconset" "$CATALOG/AppIcon.appiconset"
-          [ -f "$CATALOG/AppIcon.appiconset/contents.json" ] && mv -f "$CATALOG/AppIcon.appiconset/contents.json" "$CATALOG/AppIcon.appiconset/Contents.json"
-          /usr/bin/sed -i '' 's/assets\.xcassets/Assets.xcassets/g' "$PBX" || true
-          /usr/bin/sed -i '' 's/appicon\.appiconset/AppIcon.appiconset/g' "$PBX" || true
-          /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
-
-      - name: Fix resources (AppIcon + storyboards)
-        script: |
-          set -e
-          CATALOG="HelloWorld/Assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
-          [ -e "$APPICON" ] && [ ! -d "$APPICON" ] && mv -f "$APPICON" "${APPICON}.bak.$(date +%s)"
-          mkdir -p "$APPICON"
-          if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
-            printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
-          fi
-          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
-          mkdir -p "HelloWorld/Base.lproj"
-          MAIN="HelloWorld/Base.lproj/Main.storyboard"
-          LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
-          IB="/Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool"
-          if ! [ -f "$MAIN" ] || ! "$IB" --compile /tmp/Main.cib "$MAIN" >/dev/null 2>&1; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" initialViewController="VC"><scenes><scene sceneID="scene"><objects><viewController id="VC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="view"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="responder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$MAIN"
-          fi
-          if ! [ -f "$LAUNCH" ] || ! "$IB" --compile /tmp/Launch.cib "$LAUNCH" >/dev/null 2>&1; then
-            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" useAutolayout="YES" launchScreen="YES"><scenes><scene sceneID="launch"><objects><viewController id="launchVC" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launchView"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" systemColor="systemBackgroundColor"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launchResponder" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$LAUNCH"
-          fi
-          "$IB" --compile /tmp/Main.cib "$MAIN"
-          "$IB" --compile /tmp/Launch.cib "$LAUNCH"
-
-      - name: Ensure Swift sources (AppDelegate + ViewController)
-        script: |
-          set -e
-          SRC="HelloWorld"
-          mkdir -p "$SRC"
-          # AppDelegate.swift (iOS 12+)
-          if [ ! -f "$SRC/AppDelegate.swift" ]; then
-            printf '%s\n' 'import UIKit' \
-                          '@UIApplicationMain' \
-                          'class AppDelegate: UIResponder, UIApplicationDelegate {' \
-                          '  var window: UIWindow?' \
-                          '  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }' \
-                          '}' > "$SRC/AppDelegate.swift"
-          fi
-          # ViewController.swift with iOS 12 fallback
-          if [ ! -f "$SRC/ViewController.swift" ]; then
-            printf '%s\n' 'import UIKit' \
-                          'class ViewController: UIViewController {' \
-                          '  override func viewDidLoad() {' \
-                          '    super.viewDidLoad()' \
-                          '    if #available(iOS 13.0, *) {' \
-                          '      view.backgroundColor = .systemBackground' \
-                          '    } else {' \
-                          '      view.backgroundColor = .white' \
-                          '    }' \
-                          '  }' \
-                          '}' > "$SRC/ViewController.swift"
-          fi
-
-      - name: Ensure Info.plist usage descriptions
-        script: |
-          set -e
-          PLIST="HelloWorld/Info.plist"
-          ensure() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
-          # Permissions you need:
-          ensure NSMicrophoneUsageDescription "Needed for sound recognition."
-          ensure NSLocationWhenInUseUsageDescription "Needed to place discoveries on the Sydney CBD map."
-          # Optional (only if you request Always location):
-          # ensure NSLocationAlwaysAndWhenInUseUsageDescription "Needed to update locations in the background."
-          # Make sure storyboard keys exist:
-          ensure UIMainStoryboardFile "Main"
-          ensure UILaunchStoryboardName "LaunchScreen"
-
       - name: Build IPA
         script: |
           set -e
+          # Keep min iOS in sync (optional; remove if set in Xcode)
+          /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' HelloWorld.xcodeproj/project.pbxproj || true
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
