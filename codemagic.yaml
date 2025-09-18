@@ -9,8 +9,8 @@ workflows:
       xcode: 16.4
       groups: [gbaz]
       vars:
-        XCODE_PROJECT: "HelloWorld.xcodeproj"   # change if your .xcodeproj differs
-        XCODE_SCHEME: "HelloWorld"             # change if your scheme differs
+        XCODE_PROJECT: "HelloWorld.xcodeproj"
+        XCODE_SCHEME: "HelloWorld"
         BUNDLE_ID: "au.gbaz.app"
 
     scripts:
@@ -22,33 +22,18 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Ensure Info.plist exists + keys (no here-doc)
+      - name: Ensure Info.plist + keys
         script: |
           set -e
           PLIST="IOS-FirstApp/Info.plist"
           mkdir -p "$(dirname "$PLIST")"
-
-          # Create a minimal plist if missing (single line to avoid YAML parsing issues)
-          if [ ! -f "$PLIST" ]; then
-            printf '%s' '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict/></plist>' > "$PLIST"
-          fi
-
-          # Helper that safely sets/creates string keys
-          ensure() {
-            /usr/libexec/PlistBuddy -c "Set :$1 \"$2\"" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Add :$1 string \"$2\"" "$PLIST"
-          }
-
+          [ -f "$PLIST" ] || printf '%s' '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict/></plist>' > "$PLIST"
+          ensure() { /usr/libexec/PlistBuddy -c "Set :$1 \"$2\"" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string \"$2\"" "$PLIST"; }
           ensure UIMainStoryboardFile Main
           ensure UILaunchStoryboardName LaunchScreen
-          ensure NSLocationWhenInUseUsageDescription "We use your location to place discoveries on the map."
-          ensure NSMicrophoneUsageDescription "Microphone is used for audio features and keyword detection."
-          ensure NSSpeechRecognitionUsageDescription "Speech recognition is used to detect the reward keyword."
-
-          # Optional: CFBundleDisplayName/Identifier if you want to enforce them here
-          # ensure CFBundleDisplayName HelloWorld
-          # ensure CFBundleIdentifier '$(PRODUCT_BUNDLE_IDENTIFIER)'
-
+          ensure NSLocationWhenInUseUsageDescription 'We use your location to place discoveries on the map.'
+          ensure NSMicrophoneUsageDescription 'Microphone is used for audio features.'
+          ensure NSSpeechRecognitionUsageDescription 'Speech recognition is used for keyword detection.'
           plutil -lint "$PLIST"
 
       - name: Auto-bump build number
@@ -58,7 +43,6 @@ workflows:
           NEW_BUILD=$(date +%Y%m%d%H%M)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || \
           /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
-          echo "Set CFBundleVersion to $NEW_BUILD in $PLIST"
 
       - name: Build IPA
         script: |
@@ -66,11 +50,9 @@ workflows:
           xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
 
     artifacts:
-      - "$CM_BUILD_DIR/*.ipa"
-      - "$CM_BUILD_DIR/app.xcarchive"
+      - build/ios/ipa/HelloWorld.ipa
 
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
