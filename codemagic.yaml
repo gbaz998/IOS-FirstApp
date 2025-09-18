@@ -18,6 +18,7 @@ workflows:
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
           xcode-project use-profiles
+
       - name: Info.plist
         script: |
           set -e
@@ -27,31 +28,36 @@ workflows:
           ensure UIMainStoryboardFile Main
           ensure UILaunchStoryboardName LaunchScreen
           ensure NSLocationWhenInUseUsageDescription "We use your location to place discoveries on the map."
-          ensure NSMicrophoneUsageDescription "Microphone is used for audio features."
-          ensure NSSpeechRecognitionUsageDescription "Speech recognition is used for keyword detection."
+
       - name: iOS 12 + Assets
         script: |
           set -e
           PBX="HelloWorld.xcodeproj/project.pbxproj"
           /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
-          CATALOG="assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
-          [ -d "$CATALOG" ] || mkdir -p "$CATALOG"
-          [ -f "$CATALOG/Contents.json" ] || printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$CATALOG/Contents.json"
-          [ -d "$APPICON" ] || mkdir -p "$APPICON"
-          if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
-            printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
-          fi
-          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
           /usr/bin/sed -i '' 's|HelloWorld/Assets\.xcassets|assets.xcassets|g' "$PBX" || true
           /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
-      - name: Fix storyboards
+          CATALOG="assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
+          mkdir -p "$APPICON"
+          [ -f "$CATALOG/Contents.json" ] || printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$CATALOG/Contents.json"
+          [ -f "$APPICON/Contents.json" ] || printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
+          [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
+
+      - name: Fix storyboards (replace if not XML)
         script: |
           set -e
           IB="/Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool"
           mkdir -p HelloWorld/Base.lproj
           MAIN="HelloWorld/Base.lproj/Main.storyboard"
           LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
-          cat > "$MAIN" <<'XML'
+
+          need_replace() {
+            [ ! -f "$1" ] && return 0
+            grep -q '<document' "$1" || return 0
+            return 1
+          }
+
+          if need_replace "$MAIN"; then
+            cat > "$MAIN" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" initialViewController="nav">
   <scenes>
@@ -80,7 +86,10 @@ workflows:
   </scenes>
 </document>
 XML
-          cat > "$LAUNCH" <<'XML'
+          fi
+
+          if need_replace "$LAUNCH"; then
+            cat > "$LAUNCH" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" launchScreen="YES">
   <scenes>
@@ -99,14 +108,18 @@ XML
   </scenes>
 </document>
 XML
+          fi
+
           "$IB" --compile /tmp/Main.cib "$MAIN"
           "$IB" --compile /tmp/Launch.cib "$LAUNCH"
+
       - name: Auto-bump
         script: |
           set -e
           PLIST="IOS-FirstApp/Info.plist"
           NEW_BUILD=$(date +%Y%m%d%H%M)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
+
       - name: Build IPA (workspace or project)
         script: |
           set -e
@@ -119,6 +132,7 @@ XML
           mkdir -p build/ios/ipa
           IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
           [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
+
     artifacts:
       - build/ios/ipa/HelloWorld.ipa
       - "$CM_BUILD_DIR/*.ipa"
@@ -127,3 +141,4 @@ XML
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
