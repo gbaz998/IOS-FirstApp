@@ -1,0 +1,84 @@
+import UIKit
+import MapKit
+import CoreLocation
+
+final class MapViewController: UIViewController, CLLocationManagerDelegate, MKMapViewDelegate {
+    private let mapView = MKMapView()
+    private let locationManager = CLLocationManager()
+    private lazy var shareItem = UIBarButtonItem(barButtonSystemItem: .action, target: self, action: #selector(shareLocation))
+    private lazy var rewardItem = UIBarButtonItem(title: "Reward", style: .plain, target: self, action: #selector(fakeReward))
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setSafeBackgroundColor()
+        title = "Map"
+        navigationItem.rightBarButtonItems = [shareItem, rewardItem]
+
+        mapView.translatesAutoresizingMaskIntoConstraints = false
+        mapView.showsUserLocation = true
+        mapView.delegate = self
+        view.addSubview(mapView)
+        NSLayoutConstraint.activate([
+            mapView.topAnchor.constraint(equalTo: view.topAnchor),
+            mapView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            mapView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            mapView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(addPin(_:)))
+        mapView.addGestureRecognizer(press)
+
+        locationManager.delegate = self
+        locationManager.requestWhenInUseAuthorization()
+        locationManager.startUpdatingLocation()
+
+        NotificationManager.shared.requestAuthorization()
+        SoundManager.shared.loadSFX()
+        SoundManager.shared.prepareSpeech()
+        SoundManager.shared.onKeyword = { [weak self] in
+            DispatchQueue.main.async { self?.award(points: 1, reason: "Speech trigger") }
+        }
+        SoundManager.shared.startListening(keyword: "reward")
+    }
+
+    @objc private func addPin(_ g: UILongPressGestureRecognizer) {
+        if g.state == .began {
+            let point = g.location(in: mapView)
+            let coord = mapView.convert(point, toCoordinateFrom: mapView)
+            let alert = UIAlertController(title: "New Icon", message: "Enter a description", preferredStyle: .alert)
+            alert.addTextField { $0.placeholder = "Description" }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            alert.addAction(UIAlertAction(title: "Add", style: .default, handler: { _ in
+                let text = alert.textFields?.first?.text ?? ""
+                let ann = MKPointAnnotation()
+                ann.coordinate = coord
+                ann.title = "Icon"
+                ann.subtitle = text
+                self.mapView.addAnnotation(ann)
+            }))
+            present(alert, animated: true)
+        }
+    }
+
+    @objc private func shareLocation() {
+        guard let c = locationManager.location?.coordinate else { return }
+        let url = URL(string: "https://maps.apple.com/?ll=\(c.latitude),\(c.longitude)&q=Shared+Location")!
+        let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        present(av, animated: true)
+    }
+
+    @objc private func fakeReward() { award(points: 1, reason: "Button") }
+
+    private func award(points: Int, reason: String) {
+        let total = RewardManager.shared.award(points: points, reason: reason)
+        SoundManager.shared.playSFX()
+        NotificationManager.shared.notify(title: "Reward +\(points)", body: "Total: \(total)")
+    }
+
+    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            mapView.showsUserLocation = true
+            manager.startUpdatingLocation()
+        }
+    }
+}
