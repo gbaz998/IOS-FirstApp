@@ -9,8 +9,8 @@ workflows:
       xcode: 16.4
       groups: [gbaz]
       vars:
-        XCODE_PROJECT: "HelloWorld.xcodeproj"   # change if your .xcodeproj name differs
-        XCODE_SCHEME: "HelloWorld"             # change if your scheme name differs
+        XCODE_PROJECT: "HelloWorld.xcodeproj"   # change if your .xcodeproj differs
+        XCODE_SCHEME: "HelloWorld"             # change if your scheme differs
         BUNDLE_ID: "au.gbaz.app"
 
     scripts:
@@ -22,31 +22,34 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Ensure Info.plist (create if missing) + keys
+      - name: Ensure Info.plist exists + keys (no here-doc)
         script: |
           set -e
           PLIST="IOS-FirstApp/Info.plist"
           mkdir -p "$(dirname "$PLIST")"
+
+          # Create a minimal plist if missing (single line to avoid YAML parsing issues)
           if [ ! -f "$PLIST" ]; then
-            cat > "$PLIST" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>HelloWorld</string>
-  <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>UIMainStoryboardFile</key><string>Main</string>
-  <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
-</dict></plist>
-PLIST
+            printf '%s' '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict/></plist>' > "$PLIST"
           fi
-          ensure() { /usr/libexec/PlistBuddy -c "Set :$1 $2" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"; }
+
+          # Helper that safely sets/creates string keys
+          ensure() {
+            /usr/libexec/PlistBuddy -c "Set :$1 \"$2\"" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :$1 string \"$2\"" "$PLIST"
+          }
+
           ensure UIMainStoryboardFile Main
           ensure UILaunchStoryboardName LaunchScreen
           ensure NSLocationWhenInUseUsageDescription "We use your location to place discoveries on the map."
           ensure NSMicrophoneUsageDescription "Microphone is used for audio features and keyword detection."
-          ensure NSSpeechRecognitionUsageDescription "Speech recognition is used to detect the 'reward' keyword."
+          ensure NSSpeechRecognitionUsageDescription "Speech recognition is used to detect the reward keyword."
+
+          # Optional: CFBundleDisplayName/Identifier if you want to enforce them here
+          # ensure CFBundleDisplayName HelloWorld
+          # ensure CFBundleIdentifier '$(PRODUCT_BUNDLE_IDENTIFIER)'
+
+          plutil -lint "$PLIST"
 
       - name: Auto-bump build number
         script: |
@@ -70,3 +73,4 @@ PLIST
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+
