@@ -36,48 +36,32 @@ workflows:
           /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
           CATALOG="assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
           [ -d "$CATALOG" ] || mkdir -p "$CATALOG"
-          [ -d "$APPICON" ] || mkdir -p "$APPICON"
           [ -f "$CATALOG/Contents.json" ] || printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$CATALOG/Contents.json"
+          [ -d "$APPICON" ] || mkdir -p "$APPICON"
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           fi
           [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
           /usr/bin/sed -i '' 's|HelloWorld/Assets\.xcassets|assets.xcassets|g' "$PBX" || true
           /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
-      - name: Import map icons -> assets.xcassets
-        script: |
-          set -e
-          SRC="HelloWorld/Features/Map/map icons"
-          CATALOG="assets.xcassets"
-          mkdir -p "$CATALOG"
-          IFS=$'\n'
-          for f in $(find "$SRC" -type f \( -iname "*.png" -o -iname "*.jpg" \)); do
-            base="$(basename "$f")"
-            name="${base%.*}"
-            safe="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/_/g')"
-            dst="$CATALOG/${safe}.imageset"
-            mkdir -p "$dst"
-            cp -f "$f" "$dst/${safe}.png"
-            printf '%s\n' '{ "images":[{ "idiom":"universal","filename":"'"${safe}.png"'","scale":"1x"}], "info":{"version":1,"author":"xcode"} }' > "$dst/Contents.json"
-          done
       - name: Auto-bump
         script: |
           set -e
           PLIST="IOS-FirstApp/Info.plist"
           NEW_BUILD=$(date +%Y%m%d%H%M)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
-    - name: Build IPA
-  script: |
-    set -e
-    if ls *.xcworkspace >/dev/null 2>&1; then
-      WS="$(ls -1 *.xcworkspace | head -n1)"
-      xcode-project build-ipa --workspace "$WS" --scheme "$XCODE_SCHEME"
-    else
-      xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
-    fi
-    mkdir -p build/ios/ipa
-    IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
-    [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
+      - name: Build IPA (workspace or project)
+        script: |
+          set -e
+          if ls *.xcworkspace >/dev/null 2>&1; then
+            WS="$(ls -1 *.xcworkspace | head -n1)"
+            xcode-project build-ipa --workspace "$WS" --scheme "$XCODE_SCHEME"
+          else
+            xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+          fi
+          mkdir -p build/ios/ipa
+          IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
+          [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
     artifacts:
       - build/ios/ipa/HelloWorld.ipa
       - "$CM_BUILD_DIR/*.ipa"
@@ -86,4 +70,3 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
