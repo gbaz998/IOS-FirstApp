@@ -34,5 +34,23 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+
+    <!-- STEP 4 features -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Microphone is used for audio features and keyword detection.</string>
+
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Speech recognition is used to detect the “reward” keyword.</string>
+
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Your location is used to place discoveries on the map and share your position.</string>
+
+    <!-- OPTIONAL (only if you truly need background use; also enable capabilities):
+         <key>UIBackgroundModes</key>
+         <array>
+             <string>location</string>
+             <string>audio</string>
+         </array>
+    -->
 </dict>
 </plist>
