@@ -35,7 +35,8 @@ workflows:
           PBX="HelloWorld.xcodeproj/project.pbxproj"
           /usr/bin/sed -i '' -E 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]+(\.[0-9]+)?/IPHONEOS_DEPLOYMENT_TARGET = 12.0/g' "$PBX" || true
           CATALOG="assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
-          mkdir -p "$APPICON"
+          [ -d "$CATALOG" ] || mkdir -p "$CATALOG"
+          [ -d "$APPICON" ] || mkdir -p "$APPICON"
           [ -f "$CATALOG/Contents.json" ] || printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$CATALOG/Contents.json"
           if [ ! -f "$APPICON/Contents.json" ] || ! plutil -lint "$APPICON/Contents.json" >/dev/null 2>&1; then
             printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
