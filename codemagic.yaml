@@ -66,13 +66,18 @@ workflows:
           PLIST="IOS-FirstApp/Info.plist"
           NEW_BUILD=$(date +%Y%m%d%H%M)
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
-      - name: Build IPA
-        script: |
-          set -e
-          xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
-          mkdir -p build/ios/ipa
-          IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
-          [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
+    - name: Build IPA
+  script: |
+    set -e
+    if ls *.xcworkspace >/dev/null 2>&1; then
+      WS="$(ls -1 *.xcworkspace | head -n1)"
+      xcode-project build-ipa --workspace "$WS" --scheme "$XCODE_SCHEME"
+    else
+      xcode-project build-ipa --project "$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+    fi
+    mkdir -p build/ios/ipa
+    IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
+    [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
     artifacts:
       - build/ios/ipa/HelloWorld.ipa
       - "$CM_BUILD_DIR/*.ipa"
