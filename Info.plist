@@ -2,31 +2,55 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key>
-  <string>gbaz</string>
-  <key>CFBundleDisplayName</key>
-  <string>gbaz</string>
+    <key>CFBundleDisplayName</key>
+    <string>HelloWorld</string>
 
-  <key>CFBundleIdentifier</key>
-  <string>au.gbaz.app</string>
-  <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 
-  <!-- Ensure app picks up the storyboards we create in CI -->
-  <key>UIMainStoryboardFile</key>
-  <string>Main</string>
-  <key>UILaunchStoryboardName</key>
-  <string>LaunchScreen</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
 
-  <!-- Permissions you actually use -->
-  <key>NSMicrophoneUsageDescription</key>
-  <string>Needed for sound recognition.</string>
-  <key>NSLocationWhenInUseUsageDescription</key>
-  <string>Needed to place discoveries on the Sydney CBD map.</string>
-  <!-- Include the next key only if you’ll ever request “Always” location -->
-  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-  <string>Needed to update locations in the background.</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <key>UIMainStoryboardFile</key>
+    <string>Main</string>
+
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- STEP 4 features -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Microphone is used for audio features and keyword detection.</string>
+
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Speech recognition is used to detect the “reward” keyword.</string>
+
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Your location is used to place discoveries on the map and share your position.</string>
+
+    <!-- OPTIONAL (only if you truly need background use; also enable capabilities):
+         <key>UIBackgroundModes</key>
+         <array>
+             <string>location</string>
+             <string>audio</string>
+         </array>
+    -->
 </dict>
 </plist>
