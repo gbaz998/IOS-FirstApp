@@ -43,58 +43,16 @@ workflows:
           [ -f "$A/Contents.json" ] || printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$A/Contents.json"
           [ -f "$A/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$A/AppIcon-1024.png" >/dev/null 2>&1 || true
 
-      - name: Storyboards
+      - name: Storyboards (base64, no ibtool)
         script: |
           set -e
           mkdir -p HelloWorld/Base.lproj
-          cat > HelloWorld/Base.lproj/Main.storyboard <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" initialViewController="nav">
-  <scenes>
-    <scene sceneID="s1">
-      <objects>
-        <navigationController id="nav" sceneMemberID="viewController">
-          <connections>
-            <segue destination="root" kind="relationship" relationship="rootViewController" id="rel1"/>
-          </connections>
-        </navigationController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="p1" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-    <scene sceneID="s2">
-      <objects>
-        <viewController id="root" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="v1">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="p2" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
-</document>
-XML
-          cat > HelloWorld/Base.lproj/LaunchScreen.storyboard <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" launchScreen="YES">
-  <scenes>
-    <scene sceneID="l1">
-      <objects>
-        <viewController id="lvc" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="lv1">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="lp1" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
-</document>
-XML
+          MAIN="HelloWorld/Base.lproj/Main.storyboard"
+          LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
+          M64="PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPGRvY3VtZW50IHR5cGU9ImNvbS5hcHBsZS5JbnRlcmZhY2VCdWlsZGVyMy5Db2NvYVRvdWNoLlN0b3J5Ym9hcmQiIHZlcnNpb249IjMuMCIgdG9vbHNWZXJzaW9uPSIyMDAzNyIgdGFyZ2V0UnVudGltZT0iaU9TLkNvY29hVG91Y2giIHVzZUF1dG9sYXlvdXQ9IllFUyIgaW5pdGlhbFZpZXdDb250cm9sbGVyPSJuYXYiPgogIDxzY2VuZXM+CiAgICA8c2NlbmUgc2NlbmVJRD0iczEiPgogICAgICA8b2JqZWN0cz4KICAgICAgICA8bmF2aWdhdGlvbkNvbnRyb2xsZXIgaWQ9Im5hdiIgc2NlbmVNZW1iZXJJRD0idmlld0NvbnRyb2xsZXIiPgogICAgICAgICAgPGNvbm5lY3Rpb25zPgogICAgICAgICAgICA8c2VndWUgZGVzdGluYXRpb249InJvb3QiIGtpbmQ9InJlbGF0aW9uc2hpcCIgcmVsYXRpb25zaGlwPSJyb290Vmlld0NvbnRyb2xsZXIiIGlkPSJyZWwxIi8+CiAgICAgICAgICA8L2Nvbm5lY3Rpb25zPgogICAgICAgIDwvbmF2aWdhdGlvbkNvbnRyb2xsZXI+CiAgICAgICAgPHBsYWNlaG9sZGVyIHBsYWNlaG9sZGVySWRlbnRpZmllcj0iSUJGaXJzdFJlc3BvbmRlciIgaWQ9InAxIiBzY2VuZU1lbWJlcklEPSJmaXJzdFJlc3BvbmRlciIvPgogICAgICA8L29iamVjdHM+CiAgICA8L3NjZW5lPgogICAgPHNjZW5lIHNjZW5lSUQ9InMyIj4KICAgICAgPG9iamVjdHM+CiAgICAgICAgPHZpZXdDb250cm9sbGVyIGlkPSJyb290IiBzY2VuZU1lbWJlcklEPSJ2aWV3Q29udHJvbGxlciI+CiAgICAgICAgICA8dmlldyBrZXk9InZpZXciIGNvbnRlbnRNb2RlPSJzY2FsZVRvRmlsbCIgaWQ9InYxIj4KICAgICAgICAgICAgPHJlY3Qga2V5PSJmcmFtZSIgeD0iMCIgeT0iMCIgd2lkdGg9IjM5MCIgaGVpZ2h0PSI4NDQiLz4KICAgICAgICAgICAgPGF1dG9yZXNpemluZ01hc2sga2V5PSJhdXRvcmVzaXppbmdNYXNrIiB3aWR0aFNpemFibGU9IllFUyIgaGVpZ2h0U2l6YWJsZT0iWUVTIi8+CiAgICAgICAgICAgIDxjb2xvciBrZXk9ImJhY2tncm91bmRDb2xvciIgd2hpdGU9IjEiIGFscGhhPSIxIiBjb2xvclNwYWNlPSJjYWxpYnJhdGVkV2hpdGUiLz4KICAgICAgICAgIDwvdmlldz4KICAgICAgICA8L3ZpZXdDb250cm9sbGVyPgogICAgICAgIDxwbGFjZWhvbGRlciBwbGFjZWhvbGRlcklkZW50aWZpZXI9IklCRmlyc3RSZXNwb25kZXIiIGlkPSJwMiIgc2NlbmVNZW1iZXJJRD0iZmlyc3RSZXNwb25kZXIiLz4KICAgICAgPC9vYmplY3RzPgogICAgPC9zY2VuZT4KICA8L3NjZW5lcz4KPC9kb2N1bWVudD4K"
+          L64="PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPGRvY3VtZW50IHR5cGU9ImNvbS5hcHBsZS5JbnRlcmZhY2VCdWlsZGVyMy5Db2NvYVRvdWNoLlN0b3J5Ym9hcmQiIHZlcnNpb249IjMuMCIgdG9vbHNWZXJzaW9uPSIyMDAzNyIgdGFyZ2V0UnVudGltZT0iaU9TLkNvY29hVG91Y2giIHVzZUF1dG9sYXlvdXQ9IllFUyIgbGF1bmNoU2NyZWVuPSJZRVMiPgogIDxzY2VuZXM+CiAgICA8c2NlbmUgc2NlbmVJRD0ibDEiPgogICAgICA8b2JqZWN0cz4KICAgICAgICA8dmlld0NvbnRyb2xsZXIgaWQ9Imx2YyIgc2NlbmVNZW1iZXJJRD0idmlld0NvbnRyb2xsZXIiPgogICAgICAgICAgPHZpZXcga2V5PSJ2aWV3IiBjb250ZW50TW9kZT0ic2NhbGVUb0ZpbGwiIGlkPSJsdjEiPgogICAgICAgICAgICA8cmVjdCBrZXk9ImZyYW1lIiB4PSIwIiB5PSIwIiB3aWR0aD0iMzkwIiBoZWlnaHQ9Ijg0NCIvPgogICAgICAgICAgICA8YXV0b3Jlc2l6aW5nTWFzayBrZXk9ImF1dG9yZXNpemluZ01hc2siIHdpZHRoU2l6YWJsZT0iWUVTIiBoZWlnaHRTaXphYmxlPSJZRVMiLz4KICAgICAgICAgICAgPGNvbG9yIGtleT0iYmFja2dyb3VuZENvbG9yIiB3aGl0ZT0iMSIgYWxwaGE9IjEiIGNvbG9yU3BhY2U9ImNhbGlicmF0ZWRXaGl0ZSIvPgogICAgICAgICAgPC92aWV3PgogICAgICAgIDwvdmlld0NvbnRyb2xsZXI+CiAgICAgICAgPHBsYWNlaG9sZGVyIHBsYWNlaG9sZGVySWRlbnRpZmllcj0iSUJGaXJzdFJlc3BvbmRlciIgaWQ9ImxwMSIgc2NlbmVNZW1iZXJJRD0iZmlyc3RSZXNwb25kZXIiLz4KICAgICAgPC9vYmplY3RzPgogICAgPC9zY2VuZT4KICA8L3NjZW5lcz4KPC9kb2N1bWVudD4K"
+          printf '%s' "$M64" | base64 -D > "$MAIN" 2>/dev/null || printf '%s' "$M64" | base64 -d > "$MAIN"
+          printf '%s' "$L64" | base64 -D > "$LAUNCH" 2>/dev/null || printf '%s' "$L64" | base64 -d > "$LAUNCH"
 
       - name: Build IPA
         script: |
@@ -118,4 +76,3 @@ XML
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
