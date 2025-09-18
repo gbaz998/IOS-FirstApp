@@ -18,7 +18,6 @@ workflows:
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
           xcode-project use-profiles
-
       - name: Info.plist
         script: |
           set -e
@@ -28,7 +27,6 @@ workflows:
           ensure UIMainStoryboardFile Main
           ensure UILaunchStoryboardName LaunchScreen
           ensure NSLocationWhenInUseUsageDescription "We use your location to place discoveries on the map."
-
       - name: iOS 12 + Assets
         script: |
           set -e
@@ -37,89 +35,21 @@ workflows:
           /usr/bin/sed -i '' 's|HelloWorld/Assets\.xcassets|assets.xcassets|g' "$PBX" || true
           /usr/bin/sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = [^;]*/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/' "$PBX" || true
           CATALOG="assets.xcassets"; APPICON="$CATALOG/AppIcon.appiconset"
-          mkdir -p "$APPICON"
+          [ -d "$CATALOG" ] || mkdir -p "$CATALOG"
           [ -f "$CATALOG/Contents.json" ] || printf '%s\n' '{ "info": { "version": 1, "author": "xcode" } }' > "$CATALOG/Contents.json"
+          [ -d "$APPICON" ] || mkdir -p "$APPICON"
           [ -f "$APPICON/Contents.json" ] || printf '%s\n' '{ "images":[{"idiom":"ios-marketing","size":"1024x1024","scale":"1x","filename":"AppIcon-1024.png"}], "info":{"version":1,"author":"xcode"} }' > "$APPICON/Contents.json"
           [ -f "$APPICON/AppIcon-1024.png" ] || /usr/bin/sips -s format png --resampleHeightWidth 1024 1024 /System/Library/CoreServices/DefaultDesktop.jpg --out "$APPICON/AppIcon-1024.png" >/dev/null 2>&1 || true
-
-      - name: Fix storyboards (replace if not XML)
+      - name: Fix storyboards (force minimal XML)
         script: |
           set -e
-          IB="/Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool"
           mkdir -p HelloWorld/Base.lproj
           MAIN="HelloWorld/Base.lproj/Main.storyboard"
           LAUNCH="HelloWorld/Base.lproj/LaunchScreen.storyboard"
-
-          need_replace() {
-            [ ! -f "$1" ] && return 0
-            grep -q '<document' "$1" || return 0
-            return 1
-          }
-
-          if need_replace "$MAIN"; then
-            cat > "$MAIN" <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" initialViewController="nav">
-  <scenes>
-    <scene sceneID="s1">
-      <objects>
-        <navigationController id="nav" sceneMemberID="viewController">
-          <connections>
-            <segue destination="root" kind="relationship" relationship="rootViewController" id="rel1"/>
-          </connections>
-        </navigationController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="p1" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-    <scene sceneID="s2">
-      <objects>
-        <viewController id="root" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="v1">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="p2" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
-</document>
-XML
-          fi
-
-          if need_replace "$LAUNCH"; then
-            cat > "$LAUNCH" <<'XML'
-<?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" launchScreen="YES">
-  <scenes>
-    <scene sceneID="l1">
-      <objects>
-        <viewController id="lvc" sceneMemberID="viewController">
-          <view key="view" contentMode="scaleToFill" id="lv1">
-            <rect key="frame" x="0" y="0" width="390" height="844"/>
-            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
-          </view>
-        </viewController>
-        <placeholder placeholderIdentifier="IBFirstResponder" id="lp1" sceneMemberID="firstResponder"/>
-      </objects>
-    </scene>
-  </scenes>
-</document>
-XML
-          fi
-
-          "$IB" --compile /tmp/Main.cib "$MAIN"
-          "$IB" --compile /tmp/Launch.cib "$LAUNCH"
-
-      - name: Auto-bump
-        script: |
-          set -e
-          PLIST="IOS-FirstApp/Info.plist"
-          NEW_BUILD=$(date +%Y%m%d%H%M)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $NEW_BUILD" "$PLIST"
-
+          printf '%s' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" initialViewController="nav"><scenes><scene sceneID="s1"><objects><navigationController id="nav" sceneMemberID="viewController"><connections><segue destination="root" kind="relationship" relationship="rootViewController" id="rel1"/></connections></navigationController><placeholder placeholderIdentifier="IBFirstResponder" id="p1" sceneMemberID="firstResponder"/></objects></scene><scene sceneID="s2"><objects><viewController id="root" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="v1"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="p2" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$MAIN"
+          printf '%s' '<?xml version="1.0" encoding="UTF-8"?><document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" launchScreen="YES"><scenes><scene sceneID="l1"><objects><viewController id="lvc" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="lv1"><rect key="frame" x="0" y="0" width="390" height="844"/><autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/><color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/></view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="lp1" sceneMemberID="firstResponder"/></objects></scene></scenes></document>' > "$LAUNCH"
+          /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/Main.cib "$MAIN"
+          /Applications/Xcode-16.4.app/Contents/Developer/usr/bin/ibtool --compile /tmp/Launch.cib "$LAUNCH"
       - name: Build IPA (workspace or project)
         script: |
           set -e
@@ -132,7 +62,6 @@ XML
           mkdir -p build/ios/ipa
           IPA_SRC=$(find "$CM_BUILD_DIR" -type f -name "*.ipa" | head -n1 || true)
           [ -n "$IPA_SRC" ] && cp -f "$IPA_SRC" build/ios/ipa/HelloWorld.ipa || true
-
     artifacts:
       - build/ios/ipa/HelloWorld.ipa
       - "$CM_BUILD_DIR/*.ipa"
@@ -141,4 +70,3 @@ XML
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-
